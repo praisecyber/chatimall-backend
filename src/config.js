@@ -11,6 +11,32 @@ const need = (key) => {
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 
+const DEFAULT_CLIENT_ORIGINS_PRODUCTION = [
+  'https://chatimall-frontend.vercel.app',
+  'https://*.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'capacitor://localhost',
+  'http://localhost',
+  'http://127.0.0.1',
+];
+
+const envClientOrigins = (process.env.CLIENT_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// In development, an empty CLIENT_ORIGINS means "allow everything" (old behavior).
+// In production, an empty CLIENT_ORIGINS falls back to the safe list above so a
+// forgotten env var never accidentally opens CORS to the whole internet AND never
+// blocks the default Vercel frontend + local dev + Capacitor Android wrapper.
+const computedClientOrigins =
+  envClientOrigins.length > 0
+    ? envClientOrigins
+    : nodeEnv === 'development'
+      ? []
+      : DEFAULT_CLIENT_ORIGINS_PRODUCTION;
+
 const testPhones = {};
 for (const pair of (process.env.TEST_PHONES || '').split(',')) {
   const [phone, code] = pair.split(':').map((s) => s?.trim());
@@ -22,7 +48,7 @@ export const config = {
   port: Number(process.env.PORT || 4000),
   mongoUri: need('MONGODB_URI'),
   jwtSecret: need('JWT_SECRET'),
-  clientOrigins: (process.env.CLIENT_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
+  clientOrigins: computedClientOrigins,
   smsWebhookUrl: process.env.SMS_WEBHOOK_URL || '',
   smsWebhookToken: process.env.SMS_WEBHOOK_TOKEN || '',
   devOtpEcho: process.env.DEV_OTP_ECHO === 'true' && nodeEnv !== 'production',
