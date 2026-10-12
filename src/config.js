@@ -1,12 +1,17 @@
 import 'dotenv/config';
 
-const need = (key) => {
-  const v = process.env[key];
-  if (!v) {
-    console.error(`Missing required environment variable ${key}. Copy .env.example to .env and fill it in.`);
+const need = (keys) => {
+  if (!Array.isArray(keys)) keys = [keys];
+  const missing = keys.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(
+      `Missing required environment variable(s): ${missing.join(', ')}.\n` +
+        `Copy .env.example to .env and fill them in, or add them in the Render Environment tab.`
+    );
     process.exit(1);
   }
-  return v;
+  const [first] = keys;
+  return keys.length === 1 ? process.env[first] : Object.fromEntries(keys.map((k) => [k, process.env[k]]));
 };
 
 const nodeEnv = process.env.NODE_ENV || 'development';
@@ -43,11 +48,13 @@ for (const pair of (process.env.TEST_PHONES || '').split(',')) {
   if (phone && code) testPhones[phone.replace(/\D/g, '')] = code;
 }
 
+const { MONGODB_URI: mongoUri, JWT_SECRET: jwtSecret } = need(['MONGODB_URI', 'JWT_SECRET']);
+
 export const config = {
   nodeEnv,
   port: Number(process.env.PORT || 4000),
-  mongoUri: need('MONGODB_URI'),
-  jwtSecret: need('JWT_SECRET'),
+  mongoUri,
+  jwtSecret,
   clientOrigins: computedClientOrigins,
   smsWebhookUrl: process.env.SMS_WEBHOOK_URL || '',
   smsWebhookToken: process.env.SMS_WEBHOOK_TOKEN || '',

@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import helmet from 'helmet';
 import { config } from './config.js';
 import { makeOriginChecker } from './util.js';
 import { swaggerDocs } from './swagger.js';
@@ -20,6 +21,21 @@ import fileRoutes from './routes/files.js';
 export function createApp() {
   const app = express();
   app.set('trust proxy', 1);
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+        },
+      },
+    })
+  );
+
   const allowed = makeOriginChecker(config.clientOrigins);
   const origin = (o, cb) => cb(null, allowed(o));
   app.use(cors({ origin }));

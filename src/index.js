@@ -21,7 +21,11 @@ async function main() {
   server.listen(config.port, () => {
     console.log(`Chatimall server listening on :${config.port}`);
     console.log(`Node.js version: ${process.version}`);
-    if (process.env.DISABLE_DOCS !== 'true') console.log(`API docs: http://localhost:${config.port}/api/docs`);
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    const docsDisabled =
+      process.env.DISABLE_DOCS === 'true' ||
+      (nodeEnv === 'production' && process.env.ENABLE_DOCS !== 'true');
+    if (!docsDisabled) console.log(`API docs: http://localhost:${config.port}/api/docs`);
   });
 }
 

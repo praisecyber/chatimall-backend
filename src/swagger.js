@@ -80,7 +80,11 @@ const options = {
 export const swaggerSpec = swaggerJsdoc(options);
 
 export function swaggerDocs(app) {
-  if (process.env.DISABLE_DOCS === 'true') return;
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const disabled =
+    process.env.DISABLE_DOCS === 'true' ||
+    (nodeEnv === 'production' && process.env.ENABLE_DOCS !== 'true');
+  if (disabled) return;
   app.use(
     '/api/docs',
     swaggerUi.serve,
