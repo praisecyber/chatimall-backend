@@ -95,10 +95,14 @@ router.post(
     try {
       await sendSms(phone, `Your Chatimall code is ${code}. It expires in 5 minutes.`);
     } catch (err) {
+      if (err.message === 'SMS_NOT_CONFIGURED') {
+        console.warn(`[auth] SMS not configured; returning OTP in response for phone ${phone}`);
+        return res.json({ ok: true, dev_code: code });
+      }
       console.error('SMS failed:', err.message);
       return res.status(502).json({
         error: 'SMS_FAILED',
-        message: err.message === 'SMS_NOT_CONFIGURED' ? 'SMS sending is not set up on the server yet.' : 'Could not send the SMS. Try again.',
+        message: 'Could not send the SMS. Try again.',
       });
     }
     res.json({ ok: true, ...(config.devOtpEcho ? { dev_code: code } : {}) });
