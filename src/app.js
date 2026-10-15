@@ -43,6 +43,14 @@ export function createApp() {
 
   swaggerDocs(app);
 
+  app.get('/', (_req, res) =>
+    res.json({
+      ok: true,
+      service: 'Chatimall API',
+      message: 'Backend is running. Use the frontend app to access Chatimall.',
+      health: '/api/health',
+    })
+  );
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRoutes);
   app.use('/api/me', meRoutes);

@@ -2,6 +2,7 @@
 // Run with:  npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 
 process.env.MONGODB_URI ||= 'mongodb://127.0.0.1:27017/test-docs';
 process.env.JWT_SECRET ||= 'test-secret-for-docs-check';
@@ -29,7 +30,10 @@ function listRoutes(app) {
   };
   walk(app._router.stack, '');
   return out
-    .map((r) => r.replace(/:(\w+)/g, '{$1}').replace(/(.)\/$/, '$1'))
+    .map((r) => {
+      const formatted = r.replace(/:(\w+)/g, '{$1}');
+      return formatted.endsWith(' /') ? formatted : formatted.replace(/\/$/, '');
+    })
     .filter((r) => !r.includes('/api/docs'));
 }
 
@@ -70,9 +74,29 @@ test('every $ref in the spec points to something that exists', () => {
 });
 
 test('public endpoints have no lock, private ones need the bearer token', () => {
-  for (const [method, path] of [['post', '/api/auth/otp/request'], ['post', '/api/auth/otp/verify'], ['get', '/api/health'], ['get', '/api/files/{key}']]) {
+  for (const [method, path] of [['get', '/'], ['post', '/api/auth/otp/request'], ['post', '/api/auth/otp/verify'], ['get', '/api/health'], ['get', '/api/files/{key}']]) {
     assert.deepEqual(swaggerSpec.paths[path][method].security, [], `${method} ${path} should be public`);
   }
   assert.equal(swaggerSpec.paths['/api/chats'].get.security, undefined); // inherits the global bearerAuth
   assert.deepEqual(swaggerSpec.security, [{ bearerAuth: [] }]);
+});
+
+test('root endpoint returns backend status and health URL', async () => {
+  const server = createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      service: 'Chatimall API',
+      message: 'Backend is running. Use the frontend app to access Chatimall.',
+      health: '/api/health',
+    });
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
 });

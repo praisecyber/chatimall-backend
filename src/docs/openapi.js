@@ -151,6 +151,28 @@
 
 /**
  * @openapi
+ * /:
+ *   get:
+ *     summary: Backend landing status
+ *     description: Confirms the backend is running and points to its health endpoint.
+ *     tags: [System]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Backend is running
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean, example: true }
+ *                 service: { type: string, example: Chatimall API }
+ *                 message: { type: string }
+ *                 health: { type: string, example: /api/health }
+ */
+
+/**
+ * @openapi
  * /api/health:
  *   get:
  *     summary: Is the server running?
@@ -544,6 +566,32 @@
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Message' }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/chats/{id}/messages/{messageId}/translation:
+ *   get:
+ *     summary: Get a voice note translation for the current user
+ *     description: Returns the translated audio when ready, or its current status. The user's translation settings determine the target language.
+ *     tags: [Chats]
+ *     parameters:
+ *       - $ref: '#/components/parameters/IdPath'
+ *       - name: messageId
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Translation status or translated audio URL
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, enum: [off, ready, pending, failed] }
+ *                 audio_url: { type: string }
+ *                 language: { type: string }
+ *                 reason: { type: string }
  *       400: { $ref: '#/components/responses/BadRequest' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       404: { $ref: '#/components/responses/NotFound' }
