@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" fill="none">
+  <rect width="900" height="540" fill="#F2F8F4"/>
+  <circle cx="128" cy="112" r="78" fill="#E2F1E7"/>
+  <circle cx="780" cy="430" r="112" fill="#E4F3E9"/>
+  <rect x="134" y="56" width="632" height="428" rx="32" fill="#FFFFFF" stroke="#DDE9E1" stroke-width="2"/>
+  <text x="176" y="108" fill="#111111" font-family="Arial, sans-serif" font-size="22" font-weight="700">Group vote</text>
+  <rect x="590" y="82" width="132" height="34" rx="17" fill="#E6F4EB"/>
+  <path d="M610 96v-3a7 7 0 0 1 14 0v3m-16 0h18v13h-18V96Z" stroke="#0F8A5F" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="640" y="104" fill="#0F6849" font-family="Arial, sans-serif" font-size="12" font-weight="700">PRIVATE</text>
+  <text x="176" y="150" fill="#53645A" font-family="Arial, sans-serif" font-size="14">Where should we meet?</text>
+  <rect x="176" y="178" width="548" height="62" rx="16" fill="#F7FAF8" stroke="#DDE9E1" stroke-width="2"/>
+  <circle cx="208" cy="209" r="12" stroke="#9AA9A0" stroke-width="3"/>
+  <text x="238" y="215" fill="#111111" font-family="Arial, sans-serif" font-size="16">The park</text>
+  <rect x="176" y="254" width="548" height="62" rx="16" fill="#EAF5EE" stroke="#0F8A5F" stroke-width="3"/>
+  <circle cx="208" cy="285" r="12" fill="#0F8A5F"/>
+  <path d="m202 285 4 4 8-9" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="238" y="291" fill="#111111" font-family="Arial, sans-serif" font-size="16" font-weight="700">The little cafe</text>
+  <rect x="176" y="330" width="548" height="62" rx="16" fill="#F7FAF8" stroke="#DDE9E1" stroke-width="2"/>
+  <circle cx="208" cy="361" r="12" stroke="#9AA9A0" stroke-width="3"/>
+  <text x="238" y="367" fill="#111111" font-family="Arial, sans-serif" font-size="16">Somewhere new</text>
+  <rect x="176" y="416" width="548" height="42" rx="21" fill="#111111"/>
+  <path d="M200 429v-2a8 8 0 0 1 16 0v2m-19 0h22v15h-22v-15Z" stroke="#48D18B" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="238" y="443" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="14" font-weight="700">Votes are hidden from the group</text>
+</svg>

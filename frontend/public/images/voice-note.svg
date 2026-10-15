@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" fill="none">
+  <rect width="900" height="540" fill="#F2F8F4"/>
+  <circle cx="130" cy="112" r="84" fill="#E0F1E6"/>
+  <circle cx="786" cy="425" r="116" fill="#E3F2E8"/>
+  <rect x="268" y="28" width="364" height="484" rx="42" fill="#111111"/>
+  <rect x="280" y="40" width="340" height="460" rx="32" fill="#FFFFFF"/>
+  <rect x="397" y="52" width="106" height="12" rx="6" fill="#111111"/>
+  <text x="318" y="112" fill="#111111" font-family="Arial, sans-serif" font-size="22" font-weight="700">Voice note</text>
+  <circle cx="348" cy="166" r="25" fill="#DDF1E4"/>
+  <path d="M348 153c-7 0-12 5-12 12v4a12 12 0 0 0 24 0v-4c0-7-5-12-12-12Z" fill="#0F8A5F"/>
+  <path d="M329 168v2a19 19 0 0 0 38 0v-2M348 190v10m-10 0h20" stroke="#0F8A5F" stroke-width="4" stroke-linecap="round"/>
+  <text x="390" y="162" fill="#111111" font-family="Arial, sans-serif" font-size="16" font-weight="700">Mara</text>
+  <text x="390" y="184" fill="#53645A" font-family="Arial, sans-serif" font-size="14">just now</text>
+  <rect x="304" y="220" width="292" height="166" rx="24" fill="#F4F9F6"/>
+  <circle cx="356" cy="303" r="28" fill="#0F8A5F"/>
+  <path d="m351 291 19 12-19 12v-24Z" fill="#FFFFFF"/>
+  <path d="M402 303v-13m18 30v-48m18 38v-25m18 35v-53m18 34v-18m18 33v-45m18 35v-25m18 34v-52m18 39v-27m18 23v-12" stroke="#0F8A5F" stroke-width="7" stroke-linecap="round"/>
+  <path d="M334 354h232" stroke="#D9E8DE" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="376" cy="354" r="7" fill="#111111"/>
+  <text x="334" y="376" fill="#53645A" font-family="Arial, sans-serif" font-size="13">0:08</text>
+  <text x="542" y="376" fill="#53645A" font-family="Arial, sans-serif" font-size="13">0:24</text>
+  <rect x="304" y="404" width="292" height="70" rx="18" fill="#EAF4ED"/>
+  <text x="324" y="433" fill="#53645A" font-family="Arial, sans-serif" font-size="12" font-weight="700">TRANSCRIPT</text>
+  <text x="324" y="456" fill="#111111" font-family="Arial, sans-serif" font-size="15">"Meet you by the little cinema."</text>
+</svg>

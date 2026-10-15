@@ -151,28 +151,6 @@
 
 /**
  * @openapi
- * /:
- *   get:
- *     summary: Backend landing status
- *     description: Confirms the backend is running and points to its health endpoint.
- *     tags: [System]
- *     security: []
- *     responses:
- *       200:
- *         description: Backend is running
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ok: { type: boolean, example: true }
- *                 service: { type: string, example: Chatimall API }
- *                 message: { type: string }
- *                 health: { type: string, example: /api/health }
- */
-
-/**
- * @openapi
  * /api/health:
  *   get:
  *     summary: Is the server running?

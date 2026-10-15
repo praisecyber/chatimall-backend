@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" fill="none">
+  <rect width="900" height="540" fill="#F2F8F4"/>
+  <circle cx="112" cy="410" r="112" fill="#E1F1E6"/>
+  <circle cx="770" cy="108" r="84" fill="#E5F3E9"/>
+  <rect x="118" y="54" width="664" height="432" rx="32" fill="#FFFFFF" stroke="#DDE9E1" stroke-width="2"/>
+  <text x="158" y="105" fill="#111111" font-family="Arial, sans-serif" font-size="22" font-weight="700">the gist room</text>
+  <circle cx="708" cy="94" r="7" fill="#0F8A5F"/>
+  <text x="725" y="100" fill="#0F6849" font-family="Arial, sans-serif" font-size="13" font-weight="700">LIVE</text>
+  <path d="M158 126h584" stroke="#E4EEE7" stroke-width="2"/>
+  <rect x="160" y="154" width="580" height="228" rx="24" fill="#F4F9F6"/>
+  <circle cx="294" cy="248" r="58" fill="#DDF1E4"/>
+  <circle cx="294" cy="232" r="20" fill="#0F8A5F"/>
+  <path d="M254 286c6-26 20-39 40-39s34 13 40 39" fill="#0F8A5F"/>
+  <circle cx="450" cy="248" r="58" fill="#E7EEE9"/>
+  <circle cx="450" cy="232" r="20" fill="#111111"/>
+  <path d="M410 286c6-26 20-39 40-39s34 13 40 39" fill="#111111"/>
+  <circle cx="606" cy="248" r="58" fill="#CDE9D7"/>
+  <circle cx="606" cy="232" r="20" fill="#287B52"/>
+  <path d="M566 286c6-26 20-39 40-39s34 13 40 39" fill="#287B52"/>
+  <text x="275" y="326" fill="#111111" font-family="Arial, sans-serif" font-size="14" font-weight="700">Mara</text>
+  <text x="430" y="326" fill="#111111" font-family="Arial, sans-serif" font-size="14" font-weight="700">You</text>
+  <text x="581" y="326" fill="#111111" font-family="Arial, sans-serif" font-size="14" font-weight="700">Sam</text>
+  <rect x="160" y="404" width="580" height="48" rx="24" fill="#111111"/>
+  <circle cx="194" cy="428" r="8" fill="#48D18B"/>
+  <text x="216" y="434" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="14" font-weight="700">Talking together</text>
+  <path d="M575 428h10m10-9v18m10-25v32m10-22v12m10-20v28m10-17v7m10-12v17m10-22v26m10-15v5" stroke="#48D18B" stroke-width="4" stroke-linecap="round"/>
+</svg>
