@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Otp, User } from '../models.js';
 import { requireAuth } from '../auth.js';
 import { config } from '../config.js';
-import { hashOtp, isOwnFileUrl, safeEqual, wrap } from '../util.js';
+import { hashOtp, isOwnFileUrl, normalizePhone, safeEqual, wrap } from '../util.js';
 import { serialize } from './_shared.js';
 
 const router = Router();
@@ -121,6 +121,99 @@ router.patch(
       .lean();
     if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
     res.json(settingsJson(user.settings));
+  })
+);
+
+/**
+ * @openapi
+ * /api/me/phone:
+ *   patch:
+ *     summary: Change the signed-in user's phone number
+ *     description: Requires an SMS code sent to the new number and, when enabled, the current account security PIN.
+ *     tags: [Profile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone, code]
+ *             properties:
+ *               phone: { type: string, example: "+15551234567" }
+ *               code: { type: string, example: "123456" }
+ *               pin: { type: string, description: Required when two-step verification is enabled }
+ *     responses:
+ *       200: { description: Phone number updated }
+ *       400: { description: Invalid phone number or verification code }
+ *       401: { description: Invalid code or security PIN }
+ *       409: { description: Phone number is already in use }
+ */
+router.patch(
+  '/phone',
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    const code = String(req.body?.code ?? '').trim();
+    const pin = String(req.body?.pin ?? '').trim();
+    if (!phone || !/^\d{4,8}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID_PHONE_CHANGE', message: 'Enter a valid phone number and SMS code.' });
+    }
+
+    const user = await User.findById(req.userId).select('+twoFactorPinHash phone settings.security.twoFactorAuth').lean();
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    if (phone === user.phone) return res.status(400).json({ error: 'PHONE_UNCHANGED', message: 'Enter a different phone number.' });
+
+    if (await User.exists({ phone })) {
+      return res.status(409).json({ error: 'PHONE_IN_USE', message: 'That phone number is already linked to an account.' });
+    }
+
+    let validCode = false;
+    const fixedCode = config.testPhones[phone];
+    if (fixedCode) {
+      validCode = safeEqual(fixedCode, code);
+    } else {
+      const otp = await Otp.findOne({ phone, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
+      if (otp) {
+        const updatedOtp = await Otp.findOneAndUpdate(
+          { _id: otp._id, attempts: { $lt: 5 } },
+          { $inc: { attempts: 1 } },
+          { new: true }
+        );
+        if (!updatedOtp) {
+          return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+        }
+        validCode = safeEqual(updatedOtp.codeHash, hashOtp(config.jwtSecret, phone, code));
+      }
+    }
+    if (!validCode) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+
+    const update = { phone };
+    if (user.settings?.security?.twoFactorAuth) {
+      if (!/^\d{6,12}$/.test(pin) || !user.twoFactorPinHash
+        || !safeEqual(user.twoFactorPinHash, hashOtp(config.jwtSecret, user.phone, `two-factor:${pin}`))) {
+        return res.status(401).json({ error: 'BAD_PIN', message: 'Enter your current 6 to 12 digit security PIN.' });
+      }
+      update.twoFactorPinHash = hashOtp(config.jwtSecret, phone, `two-factor:${pin}`);
+    }
+
+    let updatedUser;
+    try {
+      updatedUser = await User.findOneAndUpdate(
+        { _id: req.userId, phone: user.phone },
+        { $set: update },
+        { new: true, runValidators: true }
+      ).lean();
+    } catch (error) {
+      if (error?.code === 11000) {
+        return res.status(409).json({ error: 'PHONE_IN_USE', message: 'That phone number is already linked to an account.' });
+      }
+      throw error;
+    }
+    if (!updatedUser) {
+      return res.status(409).json({ error: 'PHONE_CHANGED', message: 'Your phone number changed in another session. Refresh and try again.' });
+    }
+
+    await Otp.deleteMany({ phone });
+    res.json(serialize.user(updatedUser));
   })
 );
 
