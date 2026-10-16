@@ -3,9 +3,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 process.env.MONGODB_URI ||= 'mongodb://127.0.0.1:27017/test-docs';
 process.env.JWT_SECRET ||= 'test-secret-for-docs-check';
@@ -37,7 +34,7 @@ function listRoutes(app) {
       const formatted = r.replace(/:(\w+)/g, '{$1}');
       return formatted.endsWith(' /') ? formatted : formatted.replace(/\/$/, '');
     })
-    .filter((r) => /^(GET|POST|PUT|PATCH|DELETE) \/api\//.test(r) && !r.includes('/api/docs'));
+    .filter((r) => !r.includes('/api/docs'));
 }
 
 /** All "METHOD /path/{param}" operations in the Swagger spec. */
@@ -77,41 +74,26 @@ test('every $ref in the spec points to something that exists', () => {
 });
 
 test('public endpoints have no lock, private ones need the bearer token', () => {
-  for (const [method, path] of [['post', '/api/auth/otp/request'], ['post', '/api/auth/otp/verify'], ['get', '/api/health'], ['get', '/api/files/{key}']]) {
+  for (const [method, path] of [['get', '/'], ['post', '/api/auth/otp/request'], ['post', '/api/auth/otp/verify'], ['get', '/api/health'], ['get', '/api/files/{key}']]) {
     assert.deepEqual(swaggerSpec.paths[path][method].security, [], `${method} ${path} should be public`);
   }
   assert.equal(swaggerSpec.paths['/api/chats'].get.security, undefined); // inherits the global bearerAuth
   assert.deepEqual(swaggerSpec.security, [{ bearerAuth: [] }]);
 });
 
-test('root serves the built frontend or reports API-only development status', async () => {
-  const frontendIndex = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '../frontend/dist/index.html'
-  );
+test('root endpoint returns backend status and health URL', async () => {
   const server = createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/`);
     assert.equal(response.status, 200);
-    if (existsSync(frontendIndex)) {
-      assert.match(response.headers.get('content-type'), /text\/html/);
-      assert.match(await response.text(), /<div id="root"><\/div>/);
-      const clientRoute = await fetch(`http://127.0.0.1:${server.address().port}/sign-in`);
-      assert.equal(clientRoute.status, 200);
-      assert.match(clientRoute.headers.get('content-type'), /text\/html/);
-      const missingApiRoute = await fetch(`http://127.0.0.1:${server.address().port}/api/not-a-route`);
-      assert.equal(missingApiRoute.status, 404);
-      assert.deepEqual(await missingApiRoute.json(), { error: 'NOT_FOUND' });
-    } else {
-      assert.deepEqual(await response.json(), {
-        ok: true,
-        service: 'Chatimall API',
-        message: 'Backend is running. Build the frontend to serve the app here.',
-        health: '/api/health',
-      });
-    }
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      service: 'Chatimall API',
+      message: 'Backend is running. Use the frontend app to access Chatimall.',
+      health: '/api/health',
+    });
   } finally {
     await new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve()))

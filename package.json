@@ -9,7 +9,6 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "build:frontend": "npm --prefix frontend run build",
     "test": "node --test test/util.test.js test/docs.test.js"
   },
   "dependencies": {
