@@ -30,6 +30,9 @@ const userSettingsSchema = new Schema(
 const userSchema = new Schema(
   {
     phone: { type: String, required: true, unique: true }, // digits only
+    email: { type: String, lowercase: true, trim: true, unique: true, sparse: true },
+    emailVerifiedAt: { type: Date, default: null },
+    linkedDeviceIds: { type: [{ type: Schema.Types.ObjectId, ref: 'LinkedDevice' }], default: [] },
     name: { type: String, default: '', maxlength: 40 },
     bio: { type: String, default: 'Hey there! I am using Chatimall.', maxlength: 140 },
     avatarUrl: { type: String, default: null },
@@ -56,6 +59,40 @@ const otpSchema = new Schema({
 });
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Mongo deletes expired codes itself
 otpSchema.index({ phone: 1, createdAt: -1 });
+
+const emailOtpSchema = new Schema({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  user: ref('User'),
+  purpose: { type: String, enum: ['login', 'link'], required: true },
+  codeHash: { type: String, required: true },
+  attempts: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date, required: true },
+});
+emailOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+emailOtpSchema.index({ email: 1, purpose: 1, createdAt: -1 });
+
+const linkedDeviceSchema = new Schema({
+  user: ref('User', { required: true, index: true }),
+  name: { type: String, required: true, maxlength: 80 },
+  platform: { type: String, enum: ['web', 'android'], required: true },
+  createdAt: { type: Date, default: Date.now },
+  lastSeenAt: { type: Date, default: Date.now },
+});
+linkedDeviceSchema.index({ user: 1, createdAt: -1 });
+
+const deviceLinkRequestSchema = new Schema({
+  linkId: { type: String, required: true, unique: true },
+  secretHash: { type: String, required: true },
+  pairingCodeHash: { type: String, default: null },
+  platform: { type: String, enum: ['web', 'android'], required: true },
+  status: { type: String, enum: ['pending', 'approving', 'approved', 'completed'], default: 'pending' },
+  user: ref('User'),
+  linkedDevice: ref('LinkedDevice'),
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date, required: true },
+});
+deviceLinkRequestSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const conversationSchema = new Schema({
   key: { type: String, unique: true, sparse: true }, // direct chats: "idA_idB" (sorted)
@@ -221,6 +258,9 @@ listingSchema.index({ seller: 1, createdAt: -1 });
 
 export const User = model('User', userSchema);
 export const Otp = model('Otp', otpSchema);
+export const EmailOtp = model('EmailOtp', emailOtpSchema);
+export const LinkedDevice = model('LinkedDevice', linkedDeviceSchema);
+export const DeviceLinkRequest = model('DeviceLinkRequest', deviceLinkRequestSchema);
 export const Conversation = model('Conversation', conversationSchema);
 export const Message = model('Message', messageSchema);
 export const Status = model('Status', statusSchema);

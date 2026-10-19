@@ -2,11 +2,12 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { config } from '../config.js';
-import { Otp, User } from '../models.js';
+import { EmailOtp, Otp, User } from '../models.js';
 import { signToken } from '../auth.js';
-import { sendSms } from '../sms.js';
-import { serialize } from './_shared.js';
-import { hashOtp, normalizePhone, safeEqual, wrap } from '../util.js';
+import { checkPhoneVerification, sendSms, startPhoneVerification } from '../sms.js';
+import { sendEmailOtp } from '../email.js';
+import { privateProfileJson, serialize } from './_shared.js';
+import { hashOtp, normalizeEmail, normalizePhone, safeEqual, wrap } from '../util.js';
 
 const router = Router();
 
@@ -49,7 +50,12 @@ const router = Router();
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
  *       502:
- *         description: The SMS could not be sent (provider problem or not configured)
+ *         description: The SMS provider could not send the code
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       503:
+ *         description: SMS delivery is not configured
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
@@ -86,18 +92,28 @@ router.post(
     }
 
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-    await Otp.create({
+    const otp = await Otp.create({
       phone,
       codeHash: hashOtp(config.jwtSecret, phone, code),
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     });
 
     try {
-      await sendSms(phone, `Your Chatimall code is ${code}. It expires in 5 minutes.`);
+      if (config.smsProvider === 'twilio-verify') {
+        await startPhoneVerification(phone);
+      } else {
+        await sendSms(phone, `Your Chatimall code is ${code}. It expires in 5 minutes.`);
+      }
     } catch (err) {
+      await Otp.deleteOne({ _id: otp._id }).catch((cleanupError) => {
+        console.error('Could not remove an OTP after SMS delivery failed:', cleanupError);
+      });
       if (err.message === 'SMS_NOT_CONFIGURED') {
-        console.warn(`[auth] SMS not configured; returning OTP in response for phone ${phone}`);
-        return res.json({ ok: true, dev_code: code });
+        console.error('[auth] SMS delivery is not configured.');
+        return res.status(503).json({
+          error: 'SMS_NOT_CONFIGURED',
+          message: 'Phone sign-in is temporarily unavailable. Please try again later.',
+        });
       }
       console.error('SMS failed:', err.message);
       return res.status(502).json({
@@ -105,7 +121,7 @@ router.post(
         message: 'Could not send the SMS. Try again.',
       });
     }
-    res.json({ ok: true, ...(config.devOtpEcho ? { dev_code: code } : {}) });
+    res.json({ ok: true, ...(config.devOtpEcho && config.smsProvider !== 'twilio-verify' ? { dev_code: code } : {}) });
   })
 );
 
@@ -140,7 +156,7 @@ router.post(
  *               type: object
  *               properties:
  *                 token: { type: string, description: Send as "Authorization Bearer <token>" }
- *                 user: { $ref: '#/components/schemas/User' }
+ *                 user: { $ref: '#/components/schemas/MyProfile' }
  *       400:
  *         description: Invalid input
  *         content:
@@ -171,6 +187,20 @@ router.post(
     const fixed = config.testPhones[phone];
     if (fixed) {
       ok = safeEqual(fixed, code);
+    } else if (config.smsProvider === 'twilio-verify') {
+      const otp = await Otp.findOne({ phone, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
+      if (otp) {
+        const updated = await Otp.findOneAndUpdate({ _id: otp._id, attempts: { $lt: 5 } }, { $inc: { attempts: 1 } }, { new: true });
+        if (!updated) {
+          return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+        }
+        try {
+          ok = await checkPhoneVerification(phone, code);
+        } catch (err) {
+          console.error('Twilio Verify check failed:', err.message);
+          return res.status(502).json({ error: 'SMS_VERIFY_FAILED', message: 'Could not verify the SMS code. Try again.' });
+        }
+      }
     } else {
       const otp = await Otp.findOne({ phone, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
       if (otp) {
@@ -200,7 +230,149 @@ router.post(
       }
     }
     await Otp.deleteMany({ phone });
-    res.json({ token: signToken(user._id), user: serialize.user(user) });
+    res.json({ token: signToken(user._id), user: privateProfileJson(user) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/auth/email/otp/request:
+ *   post:
+ *     summary: Request a sign-in code for a verified account email
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email }
+ *     responses:
+ *       200: { description: A code was sent if the email is linked and verified }
+ *       400: { description: Invalid email address }
+ *       429: { description: Too many code requests }
+ *       502: { description: Email provider could not send the code }
+ *       503: { description: Email delivery is not configured }
+ */
+router.post(
+  '/email/otp/request',
+  limiter,
+  wrap(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ error: 'INVALID_EMAIL', message: 'Enter a valid email address.' });
+
+    const user = await User.findOne({ email, emailVerifiedAt: { $ne: null } }).select('_id').lean();
+    if (!user) return res.json({ ok: true });
+
+    const recent = await EmailOtp.countDocuments({
+      email,
+      purpose: 'login',
+      createdAt: { $gt: new Date(Date.now() - 3600 * 1000) },
+    });
+    if (recent >= 5) {
+      return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many codes requested for this email. Try again in an hour.' });
+    }
+
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    const otp = await EmailOtp.create({
+      email,
+      user: user._id,
+      purpose: 'login',
+      codeHash: hashOtp(config.jwtSecret, email, code),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    try {
+      await sendEmailOtp(email, code);
+    } catch (err) {
+      await EmailOtp.deleteOne({ _id: otp._id }).catch((cleanupError) => {
+        console.error('Could not remove an email OTP after delivery failed:', cleanupError);
+      });
+      if (err.message === 'EMAIL_NOT_CONFIGURED') {
+        console.error('[auth] Email delivery is not configured.');
+        return res.status(503).json({
+          error: 'EMAIL_NOT_CONFIGURED',
+          message: 'Email sign-in is temporarily unavailable. Please try again later.',
+        });
+      }
+      console.error('Email OTP delivery failed:', err.message);
+      return res.status(502).json({ error: 'EMAIL_FAILED', message: 'Could not send the email. Try again.' });
+    }
+    return res.json({ ok: true, ...(config.devOtpEcho ? { dev_code: code } : {}) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/auth/email/otp/verify:
+ *   post:
+ *     summary: Verify an email sign-in code and return a session
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, code]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               code: { type: string, pattern: '^\\d{4,8}$' }
+ *               pin: { type: string, description: Required when two-step verification is enabled }
+ *     responses:
+ *       200: { description: Login successful }
+ *       400: { description: Invalid input }
+ *       401: { description: Invalid or expired code }
+ *       428: { description: Account security PIN required }
+ *       429: { description: Too many verification attempts }
+ */
+router.post(
+  '/email/otp/verify',
+  verifyLimiter,
+  wrap(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const code = String(req.body?.code ?? '').trim();
+    if (!email || !/^\d{4,8}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID', message: 'Enter the code we sent you.' });
+    }
+    const otp = await EmailOtp.findOne({
+      email,
+      purpose: 'login',
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+    if (!otp) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+
+    const updatedOtp = await EmailOtp.findOneAndUpdate(
+      { _id: otp._id, attempts: { $lt: 5 } },
+      { $inc: { attempts: 1 } },
+      { new: true }
+    );
+    if (!updatedOtp) {
+      return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+    }
+    if (!safeEqual(updatedOtp.codeHash, hashOtp(config.jwtSecret, email, code))) {
+      return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    }
+
+    const user = await User.findOne({ _id: updatedOtp.user, email, emailVerifiedAt: { $ne: null } })
+      .select('+twoFactorPinHash')
+      .lean();
+    if (!user) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    if (user.settings?.security?.twoFactorAuth) {
+      const pin = String(req.body?.pin ?? '').trim();
+      if (!/^\d{6,12}$/.test(pin)) {
+        return res.status(428).json({ error: 'SECOND_FACTOR_REQUIRED', message: 'Enter your account security PIN.' });
+      }
+      const expected = user.twoFactorPinHash;
+      if (!expected || !safeEqual(expected, hashOtp(config.jwtSecret, user.phone, `two-factor:${pin}`))) {
+        return res.status(401).json({ error: 'BAD_SECOND_FACTOR', message: 'The account security PIN is incorrect.' });
+      }
+    }
+    await EmailOtp.deleteMany({ email, purpose: 'login' });
+    return res.json({ token: signToken(user._id), user: privateProfileJson(user) });
   })
 );
 

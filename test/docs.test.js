@@ -100,3 +100,64 @@ test('root endpoint returns backend status and health URL', async () => {
     );
   }
 });
+
+test('device-link endpoints validate requests and require an authenticated approver', async () => {
+  const server = createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const invalidStart = await fetch(`${baseUrl}/api/devices/link/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ platform: 'desktop' }),
+    });
+    assert.equal(invalidStart.status, 400);
+
+    const invalidStatus = await fetch(`${baseUrl}/api/devices/link/status`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ link_id: 'invalid', secret: 'invalid' }),
+    });
+    assert.equal(invalidStatus.status, 404);
+
+    const unauthenticatedApproval = await fetch(`${baseUrl}/api/devices/link/approve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ link_id: 'invalid', secret: 'invalid' }),
+    });
+    assert.equal(unauthenticatedApproval.status, 401);
+
+    const unauthenticatedCodeApproval = await fetch(`${baseUrl}/api/devices/link/approve-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: '123456789' }),
+    });
+    assert.equal(unauthenticatedCodeApproval.status, 401);
+
+    const invalidEmailRequest = await fetch(`${baseUrl}/api/auth/email/otp/request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'not-an-email' }),
+    });
+    assert.equal(invalidEmailRequest.status, 400);
+
+    const invalidEmailVerification = await fetch(`${baseUrl}/api/auth/email/otp/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'not-an-email', code: '123456' }),
+    });
+    assert.equal(invalidEmailVerification.status, 400);
+
+    const unauthenticatedEmailLink = await fetch(`${baseUrl}/api/me/email/request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'user@example.com' }),
+    });
+    assert.equal(unauthenticatedEmailLink.status, 401);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+});

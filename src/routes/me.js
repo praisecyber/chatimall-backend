@@ -1,12 +1,21 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
-import { Otp, User } from '../models.js';
+import rateLimit from 'express-rate-limit';
+import { EmailOtp, Otp, User } from '../models.js';
 import { requireAuth } from '../auth.js';
 import { config } from '../config.js';
-import { hashOtp, isOwnFileUrl, normalizePhone, safeEqual, wrap } from '../util.js';
-import { serialize } from './_shared.js';
+import { sendEmailOtp } from '../email.js';
+import { hashOtp, isOwnFileUrl, normalizeEmail, normalizePhone, safeEqual, wrap } from '../util.js';
+import { privateProfileJson, serialize } from './_shared.js';
 
 const router = Router();
 router.use(requireAuth);
+const emailLinkLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const settingsRules = {
   privacy: {
@@ -98,7 +107,7 @@ router.get(
   wrap(async (req, res) => {
     const user = await User.findById(req.userId).lean();
     if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
-    res.json(serialize.user(user));
+    res.json(privateProfileJson(user));
   })
 );
 
@@ -213,7 +222,149 @@ router.patch(
     }
 
     await Otp.deleteMany({ phone });
-    res.json(serialize.user(updatedUser));
+    res.json(privateProfileJson(updatedUser));
+  })
+);
+
+/**
+ * @openapi
+ * /api/me/email/request:
+ *   post:
+ *     summary: Send a verification code to an email to link it to the signed-in account
+ *     tags: [Profile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email }
+ *     responses:
+ *       200: { description: Verification code sent }
+ *       400: { description: Invalid email }
+ *       409: { description: Email is already linked or verified }
+ *       429: { description: Too many verification requests }
+ *       502: { description: Email delivery failed }
+ *       503: { description: Email delivery is not configured }
+ */
+router.post(
+  '/email/request',
+  emailLinkLimiter,
+  wrap(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ error: 'INVALID_EMAIL', message: 'Enter a valid email address.' });
+    const user = await User.findById(req.userId).select('email emailVerifiedAt').lean();
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    if (user.email === email && user.emailVerifiedAt) {
+      return res.status(409).json({ error: 'EMAIL_VERIFIED', message: 'This email is already verified on your account.' });
+    }
+    if (await User.exists({ email, _id: { $ne: req.userId } })) {
+      return res.status(409).json({ error: 'EMAIL_IN_USE', message: 'That email is linked to another account.' });
+    }
+    const recent = await EmailOtp.countDocuments({
+      user: req.userId,
+      purpose: 'link',
+      createdAt: { $gt: new Date(Date.now() - 3600 * 1000) },
+    });
+    if (recent >= 5) {
+      return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many email verification requests. Try again in an hour.' });
+    }
+
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    const otp = await EmailOtp.create({
+      email,
+      user: req.userId,
+      purpose: 'link',
+      codeHash: hashOtp(config.jwtSecret, email, code),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    try {
+      await sendEmailOtp(email, code);
+    } catch (err) {
+      await EmailOtp.deleteOne({ _id: otp._id }).catch((cleanupError) => {
+        console.error('Could not remove an email verification code after delivery failed:', cleanupError);
+      });
+      if (err.message === 'EMAIL_NOT_CONFIGURED') {
+        return res.status(503).json({
+          error: 'EMAIL_NOT_CONFIGURED',
+          message: 'Email verification is temporarily unavailable. Please try again later.',
+        });
+      }
+      console.error('Email verification delivery failed:', err.message);
+      return res.status(502).json({ error: 'EMAIL_FAILED', message: 'Could not send the email. Try again.' });
+    }
+    return res.json({ ok: true, ...(config.devOtpEcho ? { dev_code: code } : {}) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/me/email/verify:
+ *   post:
+ *     summary: Verify and attach an email address to the signed-in account
+ *     tags: [Profile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, code]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               code: { type: string, pattern: '^\\d{6}$' }
+ *     responses:
+ *       200: { description: Email verified and linked }
+ *       400: { description: Invalid email or code }
+ *       401: { description: Invalid or expired code }
+ *       409: { description: Email is already linked to another account }
+ */
+router.post(
+  '/email/verify',
+  emailLinkLimiter,
+  wrap(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const code = String(req.body?.code ?? '').trim();
+    if (!email || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID_EMAIL_CODE', message: 'Enter a valid email and 6-digit code.' });
+    }
+    const otp = await EmailOtp.findOne({
+      email,
+      user: req.userId,
+      purpose: 'link',
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+    if (!otp) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    const updatedOtp = await EmailOtp.findOneAndUpdate(
+      { _id: otp._id, attempts: { $lt: 5 } },
+      { $inc: { attempts: 1 } },
+      { new: true }
+    );
+    if (!updatedOtp) {
+      return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+    }
+    if (!safeEqual(updatedOtp.codeHash, hashOtp(config.jwtSecret, email, code))) {
+      return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    }
+
+    let user;
+    try {
+      user = await User.findOneAndUpdate(
+        { _id: req.userId },
+        { $set: { email, emailVerifiedAt: new Date() } },
+        { new: true, runValidators: true }
+      ).lean();
+    } catch (err) {
+      if (err?.code === 11000) {
+        return res.status(409).json({ error: 'EMAIL_IN_USE', message: 'That email is linked to another account.' });
+      }
+      throw err;
+    }
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    await EmailOtp.deleteMany({ user: req.userId, purpose: 'link' });
+    return res.json(privateProfileJson(user));
   })
 );
 

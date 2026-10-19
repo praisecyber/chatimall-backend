@@ -23,6 +23,13 @@
  *         bio: { type: string, example: Hey there! I am using Chatimall. }
  *         avatar_url: { type: string, nullable: true, example: /api/files/3f2b8c1e-4d5a-4b6c-9d7e-1a2b3c4d5e6f }
  *         last_seen: { type: string, format: date-time }
+ *     MyProfile:
+ *       allOf:
+ *         - $ref: '#/components/schemas/User'
+ *         - type: object
+ *           properties:
+ *             email: { type: string, format: email, nullable: true }
+ *             email_verified: { type: boolean }
  *     Message:
  *       type: object
  *       properties:
@@ -197,7 +204,7 @@
  *         description: My profile
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/User' }
+ *             schema: { $ref: '#/components/schemas/MyProfile' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *   patch:
  *     summary: Update my name, bio or profile photo
@@ -217,7 +224,7 @@
  *         description: Updated profile
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/User' }
+ *             schema: { $ref: '#/components/schemas/MyProfile' }
  *       400: { $ref: '#/components/responses/BadRequest' }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  */

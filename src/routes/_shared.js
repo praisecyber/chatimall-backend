@@ -4,6 +4,12 @@ import { messageJson, postJson, userJson } from '../serialize.js';
 
 export const serialize = { user: userJson, message: messageJson, post: postJson };
 
+export const privateProfileJson = (user) => ({
+  ...userJson(user),
+  email: user.email ?? null,
+  email_verified: Boolean(user.emailVerifiedAt),
+});
+
 /** Loads a conversation the caller belongs to, or answers 404 and returns null. */
 export async function loadConversation(req, res) {
   const id = req.params.id;
