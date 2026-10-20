@@ -20,8 +20,8 @@ if (!['webhook', 'twilio', 'twilio-verify'].includes(smsProvider)) {
   throw new Error('SMS_PROVIDER must be "webhook", "twilio", or "twilio-verify".');
 }
 const emailProvider = process.env.EMAIL_PROVIDER || 'webhook';
-if (!['webhook', 'sendgrid'].includes(emailProvider)) {
-  throw new Error('EMAIL_PROVIDER must be either "webhook" or "sendgrid".');
+if (!['webhook', 'resend'].includes(emailProvider)) {
+  throw new Error('EMAIL_PROVIDER must be either "webhook" or "resend".');
 }
 
 const DEFAULT_CLIENT_ORIGINS_PRODUCTION = [
@@ -81,7 +81,7 @@ export const config = {
   emailWebhookUrl: process.env.EMAIL_WEBHOOK_URL || '',
   emailWebhookToken: process.env.EMAIL_WEBHOOK_TOKEN || '',
   emailProvider,
-  sendGridApiKey: process.env.SENDGRID_API_KEY || '',
+  resendApiKey: process.env.RESEND_API_KEY || '',
   emailFromAddress: process.env.EMAIL_FROM_ADDRESS || '',
   devOtpEcho: process.env.DEV_OTP_ECHO === 'true' && nodeEnv !== 'production',
   testPhones,

@@ -4,22 +4,22 @@ export async function sendEmailOtp(to, code) {
   const subject = 'Your Chatimall sign-in code';
   const message = `Your Chatimall code is ${code}. It expires in 5 minutes. If you did not request this code, you can ignore this email.`;
 
-  if (config.emailProvider === 'sendgrid') {
-    if (!config.sendGridApiKey || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.emailFromAddress)) {
+  if (config.emailProvider === 'resend') {
+    if (!config.resendApiKey || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.emailFromAddress)) {
       throw new Error('EMAIL_NOT_CONFIGURED');
     }
-    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       signal: AbortSignal.timeout(10_000),
       headers: {
-        Authorization: `Bearer ${config.sendGridApiKey}`,
+        Authorization: ['Bearer', config.resendApiKey].join(' '),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: config.emailFromAddress, name: 'Chatimall' },
+        from: `Chatimall <${config.emailFromAddress}>`,
+        to: [to],
         subject,
-        content: [{ type: 'text/plain', value: message }],
+        text: message,
       }),
     });
     if (!response.ok) throw new Error(`Email provider responded ${response.status}`);

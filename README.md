@@ -37,8 +37,15 @@ npm test
 | `TWILIO_MESSAGING_SERVICE_SID` | alternative direct Twilio sender | Twilio Messaging Service SID |
 | `SMS_WEBHOOK_URL` | when using `webhook` | HTTPS endpoint for a custom SMS provider |
 | `SMS_WEBHOOK_TOKEN` | optional | Bearer token for the SMS adapter |
+| `EMAIL_PROVIDER` | no (default `webhook`) | `resend` to send sign-in codes using Resend, or `webhook` |
+| `RESEND_API_KEY` | when using `resend` | Resend API key with permission to send mail; keep private |
+| `EMAIL_FROM_ADDRESS` | when using `resend` | Sender address on a domain verified in Resend |
+| `EMAIL_WEBHOOK_URL` | when using `webhook` | Email gateway endpoint |
+| `EMAIL_WEBHOOK_TOKEN` | optional | Bearer token for the email gateway |
 
 Twilio trial SMS is restricted by the account and destination country; trial console flows can be limited to pre-approved templates and verified recipient numbers. For app-generated phone OTPs, use Twilio Verify with a configured Verify Service, or a direct Twilio sender that is permitted for your trial. Keep all Twilio credentials in the deployment secret environment, never in `.env.example` or source control.
+
+Resend email is configured separately from Twilio SMS. Verify a sending domain in Resend and create an API key, then set `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `EMAIL_FROM_ADDRESS` in the backend environment. Do not reuse the Twilio SMS Auth Token as the Resend API key.
 
 ## Deploy to Render (standalone backend repo)
 
@@ -57,6 +64,9 @@ In the Render dashboard → `chatimall-backend` → Environment → add these:
 | `TWILIO_AUTH_TOKEN` | secret | Twilio Auth Token |
 | `TWILIO_FROM_NUMBER` | E.164 sender | Required for direct Twilio SMS; alternatively use `TWILIO_MESSAGING_SERVICE_SID` |
 | `TWILIO_VERIFY_SERVICE_SID` | `VA...` | Required for Twilio Verify |
+| `EMAIL_PROVIDER` | `resend` | Use Resend for sign-in code emails |
+| `RESEND_API_KEY` | secret | Resend API key with mail-sending permission |
+| `EMAIL_FROM_ADDRESS` | verified sender | Sender address on a domain verified in Resend |
 | `DEV_OTP_ECHO` | `false` in production | Set `true` only for quick local smoke tests (returns the OTP in the HTTP response) |
 | `TEST_PHONES` | leave unset in production | Fixed-code test phones are ignored in production |
 | `TRANSLATE_SERVICE_URL` | optional | URL of the Python translate-service; voice notes work fine without it, just no translation |

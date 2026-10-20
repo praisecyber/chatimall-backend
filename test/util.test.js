@@ -149,10 +149,10 @@ test('Twilio Verify accepts only approved verification checks', () => {
   assert.deepEqual(JSON.parse(resultLine), { approved: true });
 });
 
-test('SendGrid email uses the configured sender and message payload', () => {
+test('Resend email uses the configured sender and message payload', () => {
   const script = `
     globalThis.fetch = async (url, options) => {
-      console.log(JSON.stringify({ url: String(url), authorization: options.headers.Authorization, body: options.body }));
+      console.log(JSON.stringify({ url: String(url), authorization: options.headers.Authorization === 'Bearer test-resend-key', body: options.body }));
       return { ok: true };
     };
     const { sendEmailOtp } = await import('./src/email.js');
@@ -166,20 +166,20 @@ test('SendGrid email uses the configured sender and message payload', () => {
       NODE_ENV: 'production',
       MONGODB_URI: 'mongodb://127.0.0.1:27017/test-email',
       JWT_SECRET: 'test-secret',
-      EMAIL_PROVIDER: 'sendgrid',
-      SENDGRID_API_KEY: 'test-sendgrid-key',
+      EMAIL_PROVIDER: 'resend',
+      RESEND_API_KEY: 'test-resend-key',
       EMAIL_FROM_ADDRESS: 'noreply@chatimall.example',
       EMAIL_WEBHOOK_URL: '',
     },
   });
   assert.equal(child.status, 0, child.stderr);
   const request = JSON.parse(child.stdout.trim());
-  assert.equal(request.url, 'https://api.sendgrid.com/v3/mail/send');
-  assert.equal(request.authorization, 'Bearer test-sendgrid-key');
+  assert.equal(request.url, 'https://api.resend.com/emails');
+  assert.equal(request.authorization, true);
   const body = JSON.parse(request.body);
-  assert.deepEqual(body.personalizations[0].to, [{ email: 'person@example.com' }]);
-  assert.deepEqual(body.from, { email: 'noreply@chatimall.example', name: 'Chatimall' });
-  assert.match(body.content[0].value, /123456/);
+  assert.deepEqual(body.to, ['person@example.com']);
+  assert.equal(body.from, 'Chatimall <noreply@chatimall.example>');
+  assert.match(body.text, /123456/);
 });
 
 test('only our own file urls are accepted as media', () => {
