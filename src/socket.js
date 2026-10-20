@@ -1,7 +1,7 @@
 import { Server } from 'socket.io';
 import mongoose from 'mongoose';
-import { verifyToken } from './auth.js';
-import { Call, Conversation, User } from './models.js';
+import { verifySessionToken } from './auth.js';
+import { Call, Conversation, LinkedDevice, User } from './models.js';
 import { emitToUser, isOnline, setIo } from './realtime.js';
 import { userJson } from './serialize.js';
 import { notifyUser } from './push.js';
@@ -38,17 +38,29 @@ export function attachSocket(httpServer, corsOrigin) {
   const io = new Server(httpServer, { cors: { origin: corsOrigin }, maxHttpBufferSize: 1e6 });
   setIo(io);
 
-  io.use((socket, next) => {
-    const id = verifyToken(socket.handshake.auth?.token);
-    if (!id) return next(new Error('UNAUTHORIZED'));
-    socket.data.userId = id;
-    next();
+  io.use(async (socket, next) => {
+    try {
+      const claims = await verifySessionToken(socket.handshake.auth?.token);
+      if (!claims) return next(new Error('UNAUTHORIZED'));
+      socket.data.userId = claims.userId;
+      socket.data.linkedDeviceId = claims.linkedDeviceId;
+      next();
+    } catch (error) {
+      next(error);
+    }
   });
 
   io.on('connection', (socket) => {
     const me = socket.data.userId;
     socket.join(`user:${me}`);
+    if (socket.data.linkedDeviceId) socket.join(`linked-device:${socket.data.linkedDeviceId}`);
     User.updateOne({ _id: me }, { lastSeen: new Date() }).catch(() => {});
+    if (socket.data.linkedDeviceId) {
+      LinkedDevice.updateOne(
+        { _id: socket.data.linkedDeviceId, user: me },
+        { $set: { lastSeenAt: new Date() } }
+      ).catch((error) => console.warn('Could not update linked-device activity', error));
+    }
 
     // ---- typing indicator ----
     const convMembers = new Map(); // cache: conversationId -> member ids

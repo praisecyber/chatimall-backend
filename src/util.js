@@ -1,10 +1,18 @@
 import crypto from 'node:crypto';
 
-/** "+1 (555) 123-4567" -> "15551234567". Returns null when it is not a plausible phone number. */
+/** "+1 (555) 123-4567" -> "15551234567". Accepts any valid international dialing code. */
 export function normalizePhone(input) {
   if (typeof input !== 'string') return null;
-  const digits = input.replace(/\D/g, '');
+  const trimmed = input.trim();
+  const digits = trimmed.replace(/\D/g, '');
   return digits.length >= 7 && digits.length <= 15 ? digits : null;
+}
+
+export function normalizeEmail(input) {
+  if (typeof input !== 'string') return null;
+  const email = input.trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  return email;
 }
 
 export function hashOtp(secret, phone, code) {

@@ -29,7 +29,16 @@ npm test
 | `CLIENT_ORIGINS` | recommended | Comma-separated CORS origins (e.g. `http://localhost:5173,https://chatimall.vercel.app`) |
 | `TRANSLATE_SERVICE_URL` | no (default `http://localhost:8787`) | Python translate-service for voice-note transcription/translation; leave unset to disable |
 | `FCM_SERVICE_ACCOUNT` | no | Firebase push notifications (JSON string) |
-| `SMS_WEBHOOK_URL` | no | Real SMS OTP provider; dev-mode falls back to echoing the OTP to the response |
+| `SMS_PROVIDER` | no (default `webhook`) | `twilio-verify` for managed OTPs, `twilio` for direct SMS, or `webhook` |
+| `TWILIO_ACCOUNT_SID` | when using Twilio | Twilio Account SID; keep private |
+| `TWILIO_AUTH_TOKEN` | when using Twilio | Twilio Auth Token; keep private |
+| `TWILIO_VERIFY_SERVICE_SID` | when using `twilio-verify` | Verify Service SID from Twilio Console (starts with `VA`) |
+| `TWILIO_FROM_NUMBER` | when using direct Twilio SMS | Twilio-enabled sender number in E.164 format |
+| `TWILIO_MESSAGING_SERVICE_SID` | alternative direct Twilio sender | Twilio Messaging Service SID |
+| `SMS_WEBHOOK_URL` | when using `webhook` | HTTPS endpoint for a custom SMS provider |
+| `SMS_WEBHOOK_TOKEN` | optional | Bearer token for the SMS adapter |
+
+Twilio trial SMS is restricted by the account and destination country; trial console flows can be limited to pre-approved templates and verified recipient numbers. For app-generated phone OTPs, use Twilio Verify with a configured Verify Service, or a direct Twilio sender that is permitted for your trial. Keep all Twilio credentials in the deployment secret environment, never in `.env.example` or source control.
 
 ## Deploy to Render (standalone backend repo)
 
@@ -43,8 +52,13 @@ In the Render dashboard → `chatimall-backend` → Environment → add these:
 | `MONGODB_URI` | `mongodb+srv://...` | MongoDB Atlas connection string (required) |
 | `JWT_SECRET` | random 96-char hex | Auth signing secret — generate with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `CLIENT_ORIGINS` | `https://chatimall-frontend-XXXX.vercel.app,https://*.vercel.app,http://localhost:5173` | CORS allowlist — set this to your live Vercel URL(s) or browser API calls fail |
-| `TEST_PHONES` | e.g. `+2348012345678:123456` | Comma-separated `phone:code` pairs — bypass real SMS for your first login during testing |
+| `SMS_PROVIDER` | `twilio` or `twilio-verify` | Select Twilio delivery; trial sending has account and recipient restrictions |
+| `TWILIO_ACCOUNT_SID` | secret | Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | secret | Twilio Auth Token |
+| `TWILIO_FROM_NUMBER` | E.164 sender | Required for direct Twilio SMS; alternatively use `TWILIO_MESSAGING_SERVICE_SID` |
+| `TWILIO_VERIFY_SERVICE_SID` | `VA...` | Required for Twilio Verify |
 | `DEV_OTP_ECHO` | `false` in production | Set `true` only for quick local smoke tests (returns the OTP in the HTTP response) |
+| `TEST_PHONES` | leave unset in production | Fixed-code test phones are ignored in production |
 | `TRANSLATE_SERVICE_URL` | optional | URL of the Python translate-service; voice notes work fine without it, just no translation |
 
 Render service settings (already defaults for Node, but double-check):

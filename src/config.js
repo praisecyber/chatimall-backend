@@ -15,6 +15,14 @@ const need = (keys) => {
 };
 
 const nodeEnv = process.env.NODE_ENV || 'development';
+const smsProvider = process.env.SMS_PROVIDER || 'webhook';
+if (!['webhook', 'twilio', 'twilio-verify'].includes(smsProvider)) {
+  throw new Error('SMS_PROVIDER must be "webhook", "twilio", or "twilio-verify".');
+}
+const emailProvider = process.env.EMAIL_PROVIDER || 'webhook';
+if (!['webhook', 'sendgrid'].includes(emailProvider)) {
+  throw new Error('EMAIL_PROVIDER must be either "webhook" or "sendgrid".');
+}
 
 const DEFAULT_CLIENT_ORIGINS_PRODUCTION = [
   'https://chatimall-frontend.vercel.app',
@@ -42,10 +50,14 @@ const computedClientOrigins =
       ? []
       : DEFAULT_CLIENT_ORIGINS_PRODUCTION;
 
-const testPhones = {};
+const configuredTestPhones = {};
 for (const pair of (process.env.TEST_PHONES || '').split(',')) {
   const [phone, code] = pair.split(':').map((s) => s?.trim());
-  if (phone && code) testPhones[phone.replace(/\D/g, '')] = code;
+  if (phone && code) configuredTestPhones[phone.replace(/\D/g, '')] = code;
+}
+const testPhones = nodeEnv === 'production' ? {} : configuredTestPhones;
+if (nodeEnv === 'production' && Object.keys(configuredTestPhones).length > 0) {
+  console.error('[config] TEST_PHONES is ignored in production; remove it from the environment.');
 }
 
 const { MONGODB_URI: mongoUri, JWT_SECRET: jwtSecret } = need(['MONGODB_URI', 'JWT_SECRET']);
@@ -56,8 +68,21 @@ export const config = {
   mongoUri,
   jwtSecret,
   clientOrigins: computedClientOrigins,
+  smsProvider,
   smsWebhookUrl: process.env.SMS_WEBHOOK_URL || '',
   smsWebhookToken: process.env.SMS_WEBHOOK_TOKEN || '',
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioApiKeySid: process.env.TWILIO_API_KEY_SID || '',
+  twilioApiKeySecret: process.env.TWILIO_API_KEY_SECRET || '',
+  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || '',
+  twilioMessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID || '',
+  twilioVerifyServiceSid: process.env.TWILIO_VERIFY_SERVICE_SID || '',
+  emailWebhookUrl: process.env.EMAIL_WEBHOOK_URL || '',
+  emailWebhookToken: process.env.EMAIL_WEBHOOK_TOKEN || '',
+  emailProvider,
+  sendGridApiKey: process.env.SENDGRID_API_KEY || '',
+  emailFromAddress: process.env.EMAIL_FROM_ADDRESS || '',
   devOtpEcho: process.env.DEV_OTP_ECHO === 'true' && nodeEnv !== 'production',
   testPhones,
   // Base URL of the voice-translation microservice (translate-service/). Optional: if it's
