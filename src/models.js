@@ -29,9 +29,10 @@ const userSettingsSchema = new Schema(
 
 const userSchema = new Schema(
   {
-    phone: { type: String, required: true, unique: true }, // digits only
+    phone: { type: String, unique: true, sparse: true }, // digits only; optional for email-first sign-ins
     email: { type: String, lowercase: true, trim: true, unique: true, sparse: true },
     emailVerifiedAt: { type: Date, default: null },
+    activeSessionId: { type: String, default: null },
     linkedDeviceIds: { type: [{ type: Schema.Types.ObjectId, ref: 'LinkedDevice' }], default: [] },
     name: { type: String, default: '', maxlength: 40 },
     bio: { type: String, default: 'Hey there! I am using Chatimall.', maxlength: 140 },

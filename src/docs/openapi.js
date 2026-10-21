@@ -231,6 +231,28 @@
 
 /**
  * @openapi
+ * /api/me/backup/data:
+ *   get:
+ *     summary: Export my conversations and messages for an encrypted backup
+ *     tags: [Profile]
+ *     responses:
+ *       200:
+ *         description: Backup data to encrypt on the client
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [version, exported_at, conversations, messages]
+ *               properties:
+ *                 version: { type: integer, example: 1 }
+ *                 exported_at: { type: string, format: date-time }
+ *                 conversations: { type: array, items: { type: object, additionalProperties: true } }
+ *                 messages: { type: array, items: { $ref: '#/components/schemas/Message' } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ */
+
+/**
+ * @openapi
  * /api/me/settings:
  *   get:
  *     summary: Get my settings

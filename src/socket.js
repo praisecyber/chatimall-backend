@@ -54,6 +54,7 @@ export function attachSocket(httpServer, corsOrigin) {
     const me = socket.data.userId;
     socket.join(`user:${me}`);
     if (socket.data.linkedDeviceId) socket.join(`linked-device:${socket.data.linkedDeviceId}`);
+    else socket.join(`primary-session:${me}`);
     User.updateOne({ _id: me }, { lastSeen: new Date() }).catch(() => {});
     if (socket.data.linkedDeviceId) {
       LinkedDevice.updateOne(

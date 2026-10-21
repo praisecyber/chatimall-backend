@@ -1,10 +1,14 @@
 import jwt from 'jsonwebtoken';
 import { config } from './config.js';
-import { LinkedDevice } from './models.js';
+import { LinkedDevice, User } from './models.js';
 
-export const signToken = (userId, linkedDeviceId = null) =>
+export const signToken = (userId, linkedDeviceId = null, sessionId = null) =>
   jwt.sign(
-    { sub: String(userId), ...(linkedDeviceId ? { sid: String(linkedDeviceId) } : {}) },
+    {
+      sub: String(userId),
+      ...(linkedDeviceId ? { sid: String(linkedDeviceId) } : {}),
+      ...(sessionId ? { session: sessionId } : {}),
+    },
     config.jwtSecret,
     { expiresIn: '60d' }
   );
@@ -14,7 +18,8 @@ function verifyClaims(token) {
     const claims = jwt.verify(token, config.jwtSecret);
     if (typeof claims.sub !== 'string') return null;
     if (claims.sid !== undefined && typeof claims.sid !== 'string') return null;
-    return { userId: claims.sub, linkedDeviceId: claims.sid ?? null };
+    if (claims.session !== undefined && typeof claims.session !== 'string') return null;
+    return { userId: claims.sub, linkedDeviceId: claims.sid ?? null, sessionId: claims.session ?? null };
   } catch {
     return null;
   }
@@ -29,6 +34,10 @@ export async function verifySessionToken(token) {
   if (!claims) return null;
   if (claims.linkedDeviceId) {
     const active = await LinkedDevice.exists({ _id: claims.linkedDeviceId, user: claims.userId });
+    if (!active) return null;
+  } else {
+    if (!claims.sessionId) return null;
+    const active = await User.exists({ _id: claims.userId, activeSessionId: claims.sessionId });
     if (!active) return null;
   }
   return claims;

@@ -3,6 +3,7 @@ export const setIo = (instance) => {
   io = instance;
 };
 export const disconnectLinkedDevice = (deviceId) => io?.in(`linked-device:${deviceId}`).disconnectSockets(true);
+export const disconnectPrimarySession = (userId) => io?.in(`primary-session:${userId}`).disconnectSockets(true);
 export const emitToUser = (userId, event, payload) => io?.to(`user:${userId}`).emit(event, payload);
 export const emitToUsers = (ids, event, payload) => ids.forEach((id) => emitToUser(String(id), event, payload));
 export const isOnline = (userId) => (io?.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0) > 0;

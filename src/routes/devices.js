@@ -4,7 +4,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { DeviceLinkRequest, DeviceToken, LinkedDevice, User } from '../models.js';
 import { requireAuth, signToken } from '../auth.js';
-import { disconnectLinkedDevice } from '../realtime.js';
+import { disconnectLinkedDevice, disconnectPrimarySession } from '../realtime.js';
 import { wrap } from '../util.js';
 
 const router = Router();
@@ -314,7 +314,11 @@ router.get(
 router.delete(
   '/linked/current',
   wrap(async (req, res) => {
-    if (!req.linkedDeviceId) return res.json({ ok: true });
+    if (!req.linkedDeviceId) {
+      await User.updateOne({ _id: req.userId }, { $set: { activeSessionId: null } });
+      disconnectPrimarySession(req.userId);
+      return res.json({ ok: true });
+    }
     await LinkedDevice.deleteOne({ _id: req.linkedDeviceId, user: req.userId });
     await User.updateOne({ _id: req.userId }, { $pull: { linkedDeviceIds: req.linkedDeviceId } });
     disconnectLinkedDevice(req.linkedDeviceId);
