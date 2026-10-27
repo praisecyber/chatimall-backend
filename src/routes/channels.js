@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 import { Router } from 'express';
 import { Channel, ChannelPost, Conversation, Follow } from '../models.js';
 import { requireAuth } from '../auth.js';
-import { emitToRoom } from '../realtime.js';
+import { emitToRoom, isOnline } from '../realtime.js';
+import { notifyUser } from '../push.js';
 import { isOwnFileUrl, previewOf, wrap } from '../util.js';
 import { serialize } from './_shared.js';
 
@@ -146,6 +147,24 @@ router.post(
     });
     const json = serialize.post(post);
     emitToRoom(`channel:${channel._id}`, 'channel:post', json);
+
+    // Push-notify offline subscribers about the new channel post
+    const preview = previewOf(type, text);
+    const subscribers = await Follow.find({ channel: channel._id, user: { $ne: req.userId } })
+      .select('user')
+      .lean();
+    for (const sub of subscribers) {
+      const uid = String(sub.user);
+      if (!isOnline(uid)) {
+        void notifyUser(uid, {
+          title: channel.name,
+          body: preview,
+          data: { type: 'channel_post', channel_id: String(channel._id), post_id: String(post._id) },
+          channelId: 'messages',
+        });
+      }
+    }
+
     res.status(201).json(json);
   })
 );

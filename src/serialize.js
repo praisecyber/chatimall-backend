@@ -7,6 +7,7 @@ export const userJson = (u) => ({
   avatar_url: u.avatarUrl ?? null,
   public_key: u.publicKey ?? null,
   last_seen: u.lastSeen,
+  is_suspended: Boolean(u.isSuspended),
 });
 
 export const messageJson = (m) => ({

@@ -29,6 +29,11 @@ npm test
 | `CLIENT_ORIGINS` | recommended | Comma-separated CORS origins (e.g. `http://localhost:5173,https://chatimall.vercel.app`) |
 | `TRANSLATE_SERVICE_URL` | no (default `http://localhost:8787`) | Python translate-service for voice-note transcription/translation; leave unset to disable |
 | `FCM_SERVICE_ACCOUNT` | no | Firebase push notifications (JSON string) |
+| `TIKTOK_CLIENT_KEY` | when enabling TikTok linking | TikTok developer app client key |
+| `TIKTOK_CLIENT_SECRET` | when enabling TikTok linking | TikTok developer app secret; keep private |
+| `TIKTOK_REDIRECT_URI` | when enabling TikTok linking | Exact HTTPS callback registered in Login Kit, e.g. `https://YOUR_BACKEND_HOST/api/tiktok/callback` |
+| `TIKTOK_TOKEN_ENCRYPTION_KEY` | when enabling TikTok linking | Base64-encoded 32-byte key used to encrypt stored TikTok tokens; generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` and keep stable |
+| `TIKTOK_FRONTEND_URL` | no | Chatimall frontend URL shown after TikTok authorization |
 | `SMS_PROVIDER` | no (default `webhook`) | `twilio-verify` for managed OTPs, `twilio` for direct SMS, or `webhook` |
 | `TWILIO_ACCOUNT_SID` | when using Twilio | Twilio Account SID; keep private |
 | `TWILIO_AUTH_TOKEN` | when using Twilio | Twilio Auth Token; keep private |
@@ -46,6 +51,8 @@ npm test
 Twilio trial SMS is restricted by the account and destination country; trial console flows can be limited to pre-approved templates and verified recipient numbers. For app-generated phone OTPs, use Twilio Verify with a configured Verify Service, or a direct Twilio sender that is permitted for your trial. Keep all Twilio credentials in the deployment secret environment, never in `.env.example` or source control.
 
 Resend email is configured separately from Twilio SMS. Verify a sending domain in Resend and create an API key, then set `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `EMAIL_FROM_ADDRESS` in the backend environment. Do not reuse the Twilio SMS Auth Token as the Resend API key.
+
+TikTok account linking requires an approved TikTok developer app with Login Kit and Display API access for `user.info.basic` and `video.list`. Set the four TikTok backend variables above only after TikTok approves the app, and register the exact value of `TIKTOK_REDIRECT_URI` in the TikTok app configuration. OAuth tokens are encrypted in MongoDB using `TIKTOK_TOKEN_ENCRYPTION_KEY`; do not rotate that key while linked accounts exist unless you first disconnect/reconnect them. Research and Commercial Content APIs are researcher-restricted, TikTok Minis requires partner onboarding, and Data Portability is region-limited; these are not enabled by this integration.
 
 ## Deploy to Render (standalone backend repo)
 

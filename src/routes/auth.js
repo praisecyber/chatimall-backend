@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { config } from '../config.js';
 import { EmailOtp, Otp, User } from '../models.js';
 import { signToken } from '../auth.js';
+import { disconnectPrimarySession } from '../realtime.js';
 import { checkPhoneVerification, sendSms, startPhoneVerification } from '../sms.js';
 import { sendEmailOtp } from '../email.js';
 import { privateProfileJson, serialize } from './_shared.js';
@@ -229,8 +230,12 @@ router.post(
         return res.status(401).json({ error: 'BAD_SECOND_FACTOR', message: 'The account security PIN is incorrect.' });
       }
     }
+    const sessionId = crypto.randomUUID();
+    user.activeSessionId = sessionId;
+    await user.save();
+    disconnectPrimarySession(String(user._id));
     await Otp.deleteMany({ phone });
-    res.json({ token: signToken(user._id), user: privateProfileJson(user) });
+    res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
   })
 );
 
@@ -264,9 +269,6 @@ router.post(
     const email = normalizeEmail(req.body?.email);
     if (!email) return res.status(400).json({ error: 'INVALID_EMAIL', message: 'Enter a valid email address.' });
 
-    const user = await User.findOne({ email, emailVerifiedAt: { $ne: null } }).select('_id').lean();
-    if (!user) return res.json({ ok: true });
-
     const recent = await EmailOtp.countDocuments({
       email,
       purpose: 'login',
@@ -276,10 +278,12 @@ router.post(
       return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many codes requested for this email. Try again in an hour.' });
     }
 
+    const existingUser = await User.findOne({ email, emailVerifiedAt: { $ne: null } }).select('_id').lean();
+    const userId = existingUser?._id ?? null;
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const otp = await EmailOtp.create({
       email,
-      user: user._id,
+      user: userId,
       purpose: 'login',
       codeHash: hashOtp(config.jwtSecret, email, code),
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
@@ -357,9 +361,17 @@ router.post(
       return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
     }
 
-    const user = await User.findOne({ _id: updatedOtp.user, email, emailVerifiedAt: { $ne: null } })
-      .select('+twoFactorPinHash')
-      .lean();
+    const existingUser = await User.findOne({ email, emailVerifiedAt: { $ne: null } }).select('+twoFactorPinHash').lean();
+    let user = existingUser;
+    if (!user) {
+      user = await User.findOneAndUpdate(
+        { email },
+        {
+          $set: { email, emailVerifiedAt: new Date() },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+      ).select('+twoFactorPinHash').lean();
+    }
     if (!user) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
     if (user.settings?.security?.twoFactorAuth) {
       const pin = String(req.body?.pin ?? '').trim();
@@ -367,12 +379,15 @@ router.post(
         return res.status(428).json({ error: 'SECOND_FACTOR_REQUIRED', message: 'Enter your account security PIN.' });
       }
       const expected = user.twoFactorPinHash;
-      if (!expected || !safeEqual(expected, hashOtp(config.jwtSecret, user.phone, `two-factor:${pin}`))) {
+      if (!expected || !safeEqual(expected, hashOtp(config.jwtSecret, user.phone ?? email, `two-factor:${pin}`))) {
         return res.status(401).json({ error: 'BAD_SECOND_FACTOR', message: 'The account security PIN is incorrect.' });
       }
     }
+    const sessionId = crypto.randomUUID();
+    await User.updateOne({ _id: user._id }, { $set: { activeSessionId: sessionId } });
+    disconnectPrimarySession(String(user._id));
     await EmailOtp.deleteMany({ email, purpose: 'login' });
-    return res.json({ token: signToken(user._id), user: privateProfileJson(user) });
+    return res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
   })
 );
 
