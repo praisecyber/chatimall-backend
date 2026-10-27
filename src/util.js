@@ -1,10 +1,13 @@
 import crypto from 'node:crypto';
 
-/** "+1 (555) 123-4567" -> "15551234567". Accepts any valid international dialing code. */
+/** "+1 (555) 123-4567" -> "15551234567". Normalizes local Nigerian 11-digit numbers to 234 format. */
 export function normalizePhone(input) {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
-  const digits = trimmed.replace(/\D/g, '');
+  let digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = `234${digits.slice(1)}`;
+  }
   return digits.length >= 7 && digits.length <= 15 ? digits : null;
 }
 

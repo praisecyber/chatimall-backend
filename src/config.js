@@ -60,9 +60,15 @@ if (nodeEnv === 'production' && Object.keys(configuredTestPhones).length > 0) {
   console.error('[config] TEST_PHONES is ignored in production; remove it from the environment.');
 }
 
+const configuredAdminPhones = (process.env.ADMIN_PHONES || '')
+  .split(',')
+  .map((p) => p.replace(/\D/g, ''))
+  .filter(Boolean);
+
 const { MONGODB_URI: mongoUri, JWT_SECRET: jwtSecret } = need(['MONGODB_URI', 'JWT_SECRET']);
 
 export const config = {
+  adminPhones: configuredAdminPhones,
   nodeEnv,
   port: Number(process.env.PORT || 4000),
   mongoUri,
@@ -88,4 +94,16 @@ export const config = {
   // Base URL of the voice-translation microservice (translate-service/). Optional: if it's
   // not reachable, voice notes just behave like before — no translation, no crash.
   translateServiceUrl: process.env.TRANSLATE_SERVICE_URL || 'http://localhost:8787',
+  tiktokClientKey: process.env.TIKTOK_CLIENT_KEY || '',
+  tiktokClientSecret: process.env.TIKTOK_CLIENT_SECRET || '',
+  tiktokRedirectUri: process.env.TIKTOK_REDIRECT_URI || '',
+  tiktokFrontendUrl: process.env.TIKTOK_FRONTEND_URL || 'https://chatimall-frontend.vercel.app',
+  tiktokTokenEncryptionKey: process.env.TIKTOK_TOKEN_ENCRYPTION_KEY || '',
 };
+
+if (config.tiktokTokenEncryptionKey) {
+  const encryptionKey = Buffer.from(config.tiktokTokenEncryptionKey, 'base64');
+  if (encryptionKey.length !== 32) {
+    throw new Error('TIKTOK_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.');
+  }
+}

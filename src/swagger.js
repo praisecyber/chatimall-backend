@@ -61,11 +61,13 @@ const options = {
       { name: 'Chats' },
       { name: 'Groups' },
       { name: 'Watch Together' },
+      { name: 'TikTok' },
       { name: 'Marketplace' },
       { name: 'Status' },
       { name: 'Channels' },
       { name: 'Calls' },
       { name: 'Devices' },
+      { name: 'Admin' },
     ],
     components: {
       securitySchemes: {

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { EmailOtp, Otp, User } from '../models.js';
+import { Conversation, EmailOtp, Message, Otp, User } from '../models.js';
 import { requireAuth } from '../auth.js';
 import { config } from '../config.js';
 import { sendEmailOtp } from '../email.js';
@@ -101,6 +101,31 @@ function settingsPatch(body) {
   }
   return Object.keys(patch).length ? patch : null;
 }
+
+router.get(
+  '/backup/data',
+  wrap(async (req, res) => {
+    const conversations = await Conversation.find({ members: req.userId })
+      .select('_id isGroup name members createdAt')
+      .lean();
+    const conversationIds = conversations.map((conversation) => conversation._id);
+    const messages = conversationIds.length
+      ? await Message.find({ conversation: { $in: conversationIds } }).sort({ createdAt: 1 }).lean()
+      : [];
+    res.json({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      conversations: conversations.map((conversation) => ({
+        id: String(conversation._id),
+        is_group: Boolean(conversation.isGroup),
+        name: conversation.name,
+        member_ids: conversation.members.map(String),
+        created_at: new Date(conversation.createdAt).toISOString(),
+      })),
+      messages: messages.map(serialize.message),
+    });
+  })
+);
 
 router.get(
   '/',
