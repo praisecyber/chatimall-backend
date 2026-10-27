@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Conversation } from '../models.js';
 import { messageJson, postJson, userJson } from '../serialize.js';
+import { isUserAdmin, getUserRole } from '../auth.js';
 
 export const serialize = { user: userJson, message: messageJson, post: postJson };
 
@@ -8,6 +9,8 @@ export const privateProfileJson = (user) => ({
   ...userJson(user),
   email: user.email ?? null,
   email_verified: Boolean(user.emailVerifiedAt),
+  is_admin: isUserAdmin(user),
+  role: getUserRole(user),
 });
 
 /** Loads a conversation the caller belongs to, or answers 404 and returns null. */

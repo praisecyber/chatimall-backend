@@ -1378,4 +1378,384 @@
  *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/admin/overview:
+ *   get:
+ *     summary: Real-time platform metrics and activity (Admin only)
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Overview stats
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 stats: { type: object }
+ *                 recentUsers: { type: array, items: { type: object } }
+ *                 recentChannels: { type: array, items: { type: object } }
+ *                 server: { type: object }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/analytics:
+ *   get:
+ *     summary: Comprehensive time-series analytics and metrics (Admin only)
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Analytics metrics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 analytics: { type: object }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/users:
+ *   get:
+ *     summary: List and search registered users (Admin only)
+ *     tags: [Admin]
+ *     parameters:
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *       - name: page
+ *         in: query
+ *         schema: { type: integer }
+ *       - name: limit
+ *         in: query
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: User list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 total: { type: integer }
+ *                 users: { type: array, items: { type: object } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/users/{id}/suspend:
+ *   patch:
+ *     summary: Suspend or reactivate user account (Admin only)
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               suspended: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Updated suspension status
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/users/{id}/ban:
+ *   patch:
+ *     summary: Ban or unban user account with reason (Admin only)
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               banned: { type: boolean }
+ *               reason: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated ban status
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/users/{id}/role:
+ *   patch:
+ *     summary: Assign user RBAC role (Super-Admin only)
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role]
+ *             properties:
+ *               role: { type: string, enum: [super_admin, moderator, support_agent, member] }
+ *     responses:
+ *       200:
+ *         description: Updated user role
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/users/{id}/activity:
+ *   get:
+ *     summary: Get user profile activity and metrics (Admin only)
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: User activity metrics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 activity: { type: object }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/users/{id}/message:
+ *   post:
+ *     summary: Send an official admin notice to a user's inbox
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [message]
+ *             properties:
+ *               message: { type: string }
+ *     responses:
+ *       200:
+ *         description: Notice delivered
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/admin/users/{id}/notes:
+ *   get:
+ *     summary: Fetch internal staff notes for a user
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: Staff notes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 notes: { type: array, items: { type: object } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ *   post:
+ *     summary: Save an internal staff note for a user
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text: { type: string }
+ *     responses:
+ *       201:
+ *         description: Staff note saved
+ *         content: { application/json: { schema: { type: object } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/admin/users/{id}:
+ *   delete:
+ *     summary: Permanently delete user account (Admin only)
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: User deleted
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/channels:
+ *   get:
+ *     summary: List all channels with subscriber and post counts (Admin only)
+ *     tags: [Admin]
+ *     parameters:
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Channel list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 channels: { type: array, items: { type: object } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *   post:
+ *     summary: Create official channel (Admin only)
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, minLength: 2, maxLength: 60 }
+ *               description: { type: string, maxLength: 300 }
+ *               avatar_url: { type: string }
+ *     responses:
+ *       201:
+ *         description: Created
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/channels/{id}:
+ *   delete:
+ *     summary: Delete channel (Admin only)
+ *     tags: [Admin]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: Channel deleted
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/broadcast:
+ *   post:
+ *     summary: Broadcast official announcement to all users (Admin only)
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [message]
+ *             properties:
+ *               title: { type: string }
+ *               message: { type: string }
+ *               channel_id: { type: string }
+ *     responses:
+ *       200:
+ *         description: Sent
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/reports:
+ *   get:
+ *     summary: Get reported messages queue (Admin only)
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: List of reported messages
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 reports: { type: array, items: { type: object } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/reports/{messageId}:
+ *   delete:
+ *     summary: Delete reported abusive message (Admin only)
+ *     tags: [Admin]
+ *     parameters:
+ *       - name: messageId
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Message deleted
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/reports/{messageId}/dismiss:
+ *   post:
+ *     summary: Dismiss reports on a message (Admin only)
+ *     tags: [Admin]
+ *     parameters:
+ *       - name: messageId
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Reports dismissed
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/reports/{messageId}/action:
+ *   post:
+ *     summary: Perform moderation action on reported message (Admin only)
+ *     tags: [Admin]
+ *     parameters:
+ *       - name: messageId
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [action]
+ *             properties:
+ *               action: { type: string, enum: [warn, suspend_sender, delete_message] }
+ *               note: { type: string }
+ *     responses:
+ *       200:
+ *         description: Action executed
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       400: { $ref: '#/components/responses/BadRequest' }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/admin/settings:
+ *   get:
+ *     summary: Retrieve system configuration and messaging limits (Admin only)
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: System settings
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 settings: { type: object }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *   patch:
+ *     summary: Update system configuration and messaging limits (Super-Admin only)
+ *     tags: [Admin]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fileSharingLimitMb: { type: integer }
+ *               voiceInputEnabled: { type: boolean }
+ *               callsEnabled: { type: boolean }
+ *               systemWelcomeMessage: { type: string }
+ *               maintenanceMode: { type: boolean }
+ *               maintenanceNotice: { type: string }
+ *               bannedWords: { type: array, items: { type: string } }
+ *               notificationRules: { type: object }
+ *     responses:
+ *       200:
+ *         description: Settings updated
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
  */

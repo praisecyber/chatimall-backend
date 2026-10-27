@@ -2,6 +2,7 @@ let io = null;
 export const setIo = (instance) => {
   io = instance;
 };
+export const getIo = () => io;
 export const disconnectLinkedDevice = (deviceId) => io?.in(`linked-device:${deviceId}`).disconnectSockets(true);
 export const disconnectPrimarySession = (userId) => io?.in(`primary-session:${userId}`).disconnectSockets(true);
 export const emitToUser = (userId, event, payload) => io?.to(`user:${userId}`).emit(event, payload);

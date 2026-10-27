@@ -40,6 +40,17 @@ const userSchema = new Schema(
     publicKey: { type: Object, default: null },
     twoFactorPinHash: { type: String, default: null, select: false },
     lastSeen: { type: Date, default: Date.now },
+    isSuspended: { type: Boolean, default: false },
+    isBanned: { type: Boolean, default: false },
+    banReason: { type: String, default: null },
+    role: { type: String, enum: ['super_admin', 'moderator', 'support_agent', 'member'], default: 'member' },
+    staffNotes: [
+      {
+        author: { type: String, default: 'Admin' },
+        text: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     addressBook: [{
       _id: false,
       name: { type: String, default: '', maxlength: 40 },
@@ -245,6 +256,28 @@ const watchSessionSchema = new Schema({
 
 /* ===================== BUY / SELL CONNECTOR ===================== */
 // Chatimall never touches money — a Listing just gets a buyer and seller talking directly.
+const tiktokOAuthStateSchema = new Schema({
+  stateHash: { type: String, required: true, unique: true },
+  user: ref('User', { required: true }),
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date, required: true },
+});
+tiktokOAuthStateSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+const tiktokConnectionSchema = new Schema({
+  user: ref('User', { required: true, unique: true }),
+  openId: { type: String, required: true, unique: true },
+  displayName: { type: String, default: '' },
+  avatarUrl: { type: String, default: '' },
+  scopes: { type: [String], default: [] },
+  accessToken: { type: String, required: true },
+  refreshToken: { type: String, required: true },
+  accessTokenExpiresAt: { type: Date, required: true },
+  refreshTokenExpiresAt: { type: Date, required: true },
+  connectedAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
 const listingSchema = new Schema({
   conversation: ref('Conversation', { required: true }), // the Group / Gist Room it's posted in
   seller: ref('User', { required: true }),
@@ -273,4 +306,24 @@ export const DeviceToken = model('DeviceToken', deviceTokenSchema);
 export const StarredMessage = model('StarredMessage', starredMessageSchema);
 export const SupportTicket = model('SupportTicket', supportTicketSchema);
 export const WatchSession = model('WatchSession', watchSessionSchema);
+export const TikTokOAuthState = model('TikTokOAuthState', tiktokOAuthStateSchema);
+export const TikTokConnection = model('TikTokConnection', tiktokConnectionSchema);
 export const Listing = model('Listing', listingSchema);
+
+const appConfigSchema = new Schema({
+  key: { type: String, required: true, unique: true },
+  fileSharingLimitMb: { type: Number, default: 50 },
+  voiceInputEnabled: { type: Boolean, default: true },
+  callsEnabled: { type: Boolean, default: true },
+  systemWelcomeMessage: { type: String, default: 'Welcome to Chatimall! Connect, chat, and trade seamlessly.' },
+  maintenanceMode: { type: Boolean, default: false },
+  maintenanceNotice: { type: String, default: 'Chatimall is currently undergoing scheduled maintenance.' },
+  bannedWords: { type: [String], default: ['scam', 'phishing', 'fraud', 'bvn hack', 'bank pin'] },
+  notificationRules: {
+    quietHoursStart: { type: String, default: '22:00' },
+    quietHoursEnd: { type: String, default: '07:00' },
+    allowCriticalAlerts: { type: Boolean, default: true },
+  },
+  updatedAt: { type: Date, default: Date.now },
+});
+export const AppConfig = model('AppConfig', appConfigSchema);
