@@ -77,7 +77,7 @@ const emailOtpSchema = new Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
   phone: { type: String },
   user: ref('User'),
-  purpose: { type: String, enum: ['login', 'link', 'phone-login', 'phone-change'], required: true },
+  purpose: { type: String, enum: ['login', 'link', 'phone-login', 'phone-change', 'phone-recovery'], required: true },
   codeHash: { type: String, required: true },
   attempts: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },

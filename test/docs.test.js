@@ -80,6 +80,8 @@ test('public endpoints have no lock, private ones need the bearer token', () => 
     ['post', '/api/auth/otp/verify'],
     ['post', '/api/auth/otp/email/request'],
     ['post', '/api/auth/otp/email/verify'],
+    ['post', '/api/auth/phone/recovery/request'],
+    ['post', '/api/auth/phone/recovery/verify'],
     ['get', '/api/health'],
     ['get', '/api/files/{key}'],
   ]) {
@@ -170,6 +172,20 @@ test('device-link endpoints validate requests and require an authenticated appro
       body: JSON.stringify({ phone: 'invalid', email: 'not-an-email', code: '123456' }),
     });
     assert.equal(invalidPhoneEmailVerification.status, 400);
+
+    const invalidPhoneRecoveryRequest = await fetch(`${baseUrl}/api/auth/phone/recovery/request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: 'invalid' }),
+    });
+    assert.equal(invalidPhoneRecoveryRequest.status, 400);
+
+    const invalidPhoneRecoveryVerification = await fetch(`${baseUrl}/api/auth/phone/recovery/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: 'invalid', code: '123456' }),
+    });
+    assert.equal(invalidPhoneRecoveryVerification.status, 400);
 
     const unauthenticatedEmailLink = await fetch(`${baseUrl}/api/me/email/request`, {
       method: 'POST',

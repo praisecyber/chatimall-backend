@@ -91,6 +91,14 @@ const verifyLimiter = rateLimit({
   message: { error: 'RATE_LIMITED', message: 'Too many verification attempts. Try again later.' },
 });
 
+const phoneRecoveryLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'RATE_LIMITED', message: 'Too many recovery attempts. Try again later.' },
+});
+
 router.post(
   '/otp/request',
   limiter,
@@ -250,6 +258,167 @@ router.post(
     disconnectPrimarySession(String(user._id));
     await Otp.deleteMany({ phone });
     res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/auth/phone/recovery/request:
+ *   post:
+ *     summary: Send an account recovery code to the email linked to a phone account
+ *     description: The response does not reveal whether the phone is registered. Codes are sent only to that account's verified email; this does not change account identifiers.
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone]
+ *             properties:
+ *               phone: { type: string, example: "+15551234567" }
+ *     responses:
+ *       200: { description: If eligible, a recovery code was sent to the linked verified email }
+ *       400: { description: Invalid phone number }
+ *       429: { description: Too many recovery attempts }
+ *       502: { description: Email provider could not send the code }
+ *       503: { description: Email delivery is not configured }
+ */
+router.post(
+  '/phone/recovery/request',
+  phoneRecoveryLimiter,
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    if (!phone) return res.status(400).json({ error: 'INVALID_PHONE', message: 'Enter a valid phone number.' });
+
+    const genericResponse = {
+      ok: true,
+      message: 'If this number is eligible for recovery, follow the instructions sent to its linked verified email.',
+    };
+    const user = await User.findOne({ phone, email: { $exists: true, $ne: null }, emailVerifiedAt: { $ne: null } })
+      .select('_id phone email emailVerifiedAt')
+      .lean();
+    if (!user) return res.json(genericResponse);
+
+    const recent = await EmailOtp.countDocuments({
+      phone,
+      purpose: 'phone-recovery',
+      createdAt: { $gt: new Date(Date.now() - 3600 * 1000) },
+    });
+    if (recent >= 5) return res.json(genericResponse);
+
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    const otp = await EmailOtp.create({
+      phone,
+      email: user.email,
+      user: user._id,
+      purpose: 'phone-recovery',
+      codeHash: hashOtp(config.jwtSecret, `${phone}:${user.email}:recovery`, code),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    try {
+      await sendEmailOtp(user.email, code);
+    } catch (err) {
+      await EmailOtp.deleteOne({ _id: otp._id }).catch((cleanupError) => {
+        console.error('Could not remove a phone recovery OTP after email delivery failed:', cleanupError);
+      });
+      if (err.message === 'EMAIL_NOT_CONFIGURED') {
+        console.error('[auth] Email delivery is not configured.');
+        return res.status(503).json({
+          error: 'EMAIL_NOT_CONFIGURED',
+          message: 'Account recovery by email is temporarily unavailable. Please try again later.',
+        });
+      }
+      console.error('Phone recovery email OTP delivery failed:', err.message);
+      return res.status(502).json({ error: 'EMAIL_FAILED', message: 'Could not send the recovery email. Try again.' });
+    }
+
+    return res.json({ ...genericResponse, ...(config.devOtpEcho ? { dev_code: code } : {}) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/auth/phone/recovery/verify:
+ *   post:
+ *     summary: Complete phone-based account recovery with the linked-email code
+ *     description: The phone only locates the account. The code must be read from its already-linked verified email.
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone, code]
+ *             properties:
+ *               phone: { type: string, example: "+15551234567" }
+ *               code: { type: string, pattern: '^\\d{6}$' }
+ *               pin: { type: string, description: Required when account security PIN is enabled }
+ *     responses:
+ *       200: { description: Account recovery successful }
+ *       400: { description: Invalid input }
+ *       401: { description: Invalid or expired code, or invalid security PIN }
+ *       428: { description: Account security PIN required }
+ *       429: { description: Too many verification attempts }
+ */
+router.post(
+  '/phone/recovery/verify',
+  verifyLimiter,
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    const code = String(req.body?.code ?? '').trim();
+    if (!phone || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID', message: 'Enter your phone number and the 6-digit recovery code.' });
+    }
+
+    const otp = await EmailOtp.findOne({
+      phone,
+      purpose: 'phone-recovery',
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+    if (!otp) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+
+    const updatedOtp = await EmailOtp.findOneAndUpdate(
+      { _id: otp._id, attempts: { $lt: 5 } },
+      { $inc: { attempts: 1 } },
+      { new: true }
+    );
+    if (!updatedOtp) {
+      return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+    }
+    if (!safeEqual(updatedOtp.codeHash, hashOtp(config.jwtSecret, phone + ':' + otp.email + ':recovery', code))) {
+      return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    }
+
+    const user = await User.findOne({
+      _id: otp.user,
+      phone,
+      email: otp.email,
+      emailVerifiedAt: { $ne: null },
+    }).select('+twoFactorPinHash');
+    if (!user) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+
+    if (user.settings?.security?.twoFactorAuth) {
+      const pin = String(req.body?.pin ?? '').trim();
+      if (!/^\d{6,12}$/.test(pin)) {
+        return res.status(428).json({ error: 'SECOND_FACTOR_REQUIRED', message: 'Enter your account security PIN.' });
+      }
+      const identity = user.phone ?? user.email;
+      if (!user.twoFactorPinHash || !safeEqual(user.twoFactorPinHash, hashOtp(config.jwtSecret, identity, `two-factor:${pin}`))) {
+        return res.status(401).json({ error: 'BAD_SECOND_FACTOR', message: 'The account security PIN is incorrect.' });
+      }
+    }
+
+    const sessionId = crypto.randomUUID();
+    user.phoneVerifiedAt = new Date();
+    user.activeSessionId = sessionId;
+    await user.save();
+    disconnectPrimarySession(String(user._id));
+    await EmailOtp.deleteMany({ phone, purpose: 'phone-recovery' });
+    return res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
   })
 );
 
