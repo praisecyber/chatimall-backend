@@ -30,6 +30,7 @@
  *           properties:
  *             email: { type: string, format: email, nullable: true }
  *             email_verified: { type: boolean }
+ *             phone_verified: { type: boolean, description: Whether the phone is confirmed for this account; email OTP confirms the account association, not SIM possession }
  *     Message:
  *       type: object
  *       properties:

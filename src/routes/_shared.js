@@ -9,6 +9,7 @@ export const privateProfileJson = (user) => ({
   ...userJson(user),
   email: user.email ?? null,
   email_verified: Boolean(user.emailVerifiedAt),
+  phone_verified: Boolean(user.phoneVerifiedAt),
   is_admin: isUserAdmin(user),
   role: getUserRole(user),
 });

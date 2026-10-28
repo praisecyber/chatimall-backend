@@ -30,7 +30,16 @@ async function postTwilioForm(url, authorization, form) {
     },
     body: form.toString(),
   });
-  if (!response.ok) throw new Error(`Twilio SMS gateway responded ${response.status}`);
+  if (!response.ok) {
+    let code;
+    try {
+      code = JSON.parse(await response.text()).code;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+    const codeMessage = Number.isInteger(code) ? ` (Twilio error ${code})` : '';
+    throw new Error(`Twilio SMS gateway responded ${response.status}${codeMessage}`);
+  }
   return response.json();
 }
 
@@ -60,30 +69,53 @@ export async function checkPhoneVerification(phoneDigits, code) {
  */
 export async function sendSms(phoneDigits, message) {
   const to = `+${phoneDigits}`;
+  if (config.smsProvider === 'termii') {
+    const { termiiApiKey, termiiSenderId } = config;
+    if (!termiiApiKey || !termiiSenderId) throw new Error('SMS_NOT_CONFIGURED');
+
+    const response = await fetch('https://api.ng.termii.com/api/sms/send', {
+      method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: termiiApiKey,
+        to: phoneDigits,
+        from: termiiSenderId,
+        sms: message,
+        type: 'plain',
+        channel: 'generic',
+      }),
+    });
+
+    let result;
+    try {
+      result = await response.json();
+    } catch (error) {
+      if (response.ok) throw error;
+      throw new Error(`Termii SMS gateway responded ${response.status}`);
+    }
+
+    const providerCode = typeof result.code === 'string' ? result.code : '';
+    if (!response.ok || providerCode.toLowerCase() !== 'ok') {
+      const codeMessage = providerCode ? ` (Termii code ${providerCode})` : '';
+      throw new Error(`Termii SMS gateway responded ${response.status}${codeMessage}`);
+    }
+    return;
+  }
   if (config.smsProvider === 'twilio') {
-    const { twilioAccountSid, twilioAuthToken, twilioFromNumber, twilioMessagingServiceSid } = config;
+    const { twilioAccountSid, twilioFromNumber, twilioMessagingServiceSid } = config;
     if (!/^AC[0-9a-f]{32}$/i.test(twilioAccountSid)
-      || !twilioAuthToken
       || (!twilioFromNumber && !/^MG[0-9a-f]{32}$/i.test(twilioMessagingServiceSid))) {
       throw new Error('SMS_NOT_CONFIGURED');
     }
     const form = new URLSearchParams({ To: to, Body: message });
     if (twilioMessagingServiceSid) form.set('MessagingServiceSid', twilioMessagingServiceSid);
     else form.set('From', twilioFromNumber);
-    const authorization = Buffer.from([twilioAccountSid, ':', twilioAuthToken].join('')).toString('base64');
-    const response = await fetch(
+    await postTwilioForm(
       `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(twilioAccountSid)}/Messages.json`,
-      {
-        method: 'POST',
-        signal: AbortSignal.timeout(10_000),
-        headers: {
-          Authorization: `Basic ${authorization}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: form.toString(),
-      }
+      twilioAuthorization(),
+      form
     );
-    if (!response.ok) throw new Error(`Twilio SMS gateway responded ${response.status}`);
     return;
   }
   if (config.smsProvider === 'webhook' && config.smsWebhookUrl) {

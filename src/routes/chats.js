@@ -60,7 +60,7 @@ router.post(
     const me = req.userId;
     const phone = normalizePhone(req.body?.phone);
     if (!phone) return res.status(400).json({ error: 'INVALID_PHONE', message: 'Enter a valid phone number with country code.' });
-    const other = await User.findOne({ phone }).lean();
+    const other = await User.findOne({ phone, phoneVerifiedAt: { $ne: null } }).lean();
     if (!other) return res.status(404).json({ error: 'NO_USER', message: 'That number is not on Chatimall yet.' });
     const otherId = String(other._id);
     if (otherId === me) return res.status(400).json({ error: 'SELF', message: 'That is your own number.' });

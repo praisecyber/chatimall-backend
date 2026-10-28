@@ -17,8 +17,8 @@ const description = `
 REST + realtime API for the Chatimall app. The frontend talks to the backend **only** through this API.
 
 ### How to try it
-1. Call **POST /api/auth/otp/request** with a phone number, then **POST /api/auth/otp/verify** with the code.
-   In development, test numbers from \`TEST_PHONES\` (for example \`+15550001111\`, code \`123456\`) work without SMS.
+1. Call **POST /api/auth/otp/email/request** with a phone number and email, then **POST /api/auth/otp/email/verify** with the code sent by email.
+   In development, test numbers from \`TEST_PHONES\` (for example \`+15550001111\`, code \`123456\`) work without email.
 2. Copy the \`token\` from the verify response, click **Authorize** (top right) and paste it.
 3. Every other endpoint is now usable with **Try it out**.
 

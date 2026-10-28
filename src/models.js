@@ -29,7 +29,8 @@ const userSettingsSchema = new Schema(
 
 const userSchema = new Schema(
   {
-    phone: { type: String, unique: true, sparse: true }, // digits only; optional for email-first sign-ins
+    phone: { type: String, unique: true, sparse: true }, // digits only; email OTP confirms the account association, not SIM possession
+    phoneVerifiedAt: { type: Date, default: null },
     email: { type: String, lowercase: true, trim: true, unique: true, sparse: true },
     emailVerifiedAt: { type: Date, default: null },
     activeSessionId: { type: String, default: null },
@@ -74,8 +75,9 @@ otpSchema.index({ phone: 1, createdAt: -1 });
 
 const emailOtpSchema = new Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
+  phone: { type: String },
   user: ref('User'),
-  purpose: { type: String, enum: ['login', 'link'], required: true },
+  purpose: { type: String, enum: ['login', 'link', 'phone-login', 'phone-change'], required: true },
   codeHash: { type: String, required: true },
   attempts: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
@@ -83,6 +85,7 @@ const emailOtpSchema = new Schema({
 });
 emailOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 emailOtpSchema.index({ email: 1, purpose: 1, createdAt: -1 });
+emailOtpSchema.index({ phone: 1, purpose: 1, createdAt: -1 });
 
 const linkedDeviceSchema = new Schema({
   user: ref('User', { required: true, index: true }),

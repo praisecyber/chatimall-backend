@@ -16,6 +16,12 @@ const emailLinkLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+const phoneEmailVerificationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const settingsRules = {
   privacy: {
@@ -160,10 +166,193 @@ router.patch(
 
 /**
  * @openapi
+ * /api/me/phone/email/request:
+ *   post:
+ *     summary: Send a phone confirmation code to the signed-in account email
+ *     description: The verified account email confirms the phone association; this does not prove possession of the phone SIM.
+ *     tags: [Profile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone]
+ *             properties:
+ *               phone: { type: string, example: "+15551234567" }
+ *     responses:
+ *       200: { description: Confirmation code sent to the linked email }
+ *       400: { description: Invalid phone number }
+ *       409: { description: Phone already in use or account has no verified email }
+ *       429: { description: Too many verification requests }
+ *       502: { description: Email delivery failed }
+ *       503: { description: Email delivery is not configured }
+ */
+router.post(
+  '/phone/email/request',
+  phoneEmailVerificationLimiter,
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    if (!phone) return res.status(400).json({ error: 'INVALID_PHONE', message: 'Enter a valid phone number.' });
+
+    const user = await User.findById(req.userId).select('phone phoneVerifiedAt email emailVerifiedAt').lean();
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    if (!user.email || !user.emailVerifiedAt) {
+      return res.status(409).json({
+        error: 'EMAIL_NOT_VERIFIED',
+        message: 'Verify an email address on your account before confirming a phone number.',
+      });
+    }
+    if (phone === user.phone && user.phoneVerifiedAt) {
+      return res.status(409).json({ error: 'PHONE_VERIFIED', message: 'That phone number is already verified.' });
+    }
+    if (await User.exists({ phone, _id: { $ne: req.userId } })) {
+      return res.status(409).json({ error: 'PHONE_IN_USE', message: 'That phone number is already linked to an account.' });
+    }
+
+    const recent = await EmailOtp.countDocuments({
+      user: req.userId,
+      purpose: 'phone-change',
+      createdAt: { $gt: new Date(Date.now() - 3600 * 1000) },
+    });
+    if (recent >= 5) {
+      return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many verification requests. Try again in an hour.' });
+    }
+
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    const otp = await EmailOtp.create({
+      email: user.email,
+      phone,
+      user: req.userId,
+      purpose: 'phone-change',
+      codeHash: hashOtp(config.jwtSecret, `${req.userId}:${phone}:${user.email}`, code),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    try {
+      await sendEmailOtp(user.email, code);
+    } catch (err) {
+      await EmailOtp.deleteOne({ _id: otp._id }).catch((cleanupError) => {
+        console.error('Could not remove a phone confirmation OTP after email delivery failed:', cleanupError);
+      });
+      if (err.message === 'EMAIL_NOT_CONFIGURED') {
+        return res.status(503).json({
+          error: 'EMAIL_NOT_CONFIGURED',
+          message: 'Email verification is temporarily unavailable. Please try again later.',
+        });
+      }
+      console.error('Phone confirmation email OTP delivery failed:', err.message);
+      return res.status(502).json({ error: 'EMAIL_FAILED', message: 'Could not send the verification email. Try again.' });
+    }
+    return res.json({ ok: true, ...(config.devOtpEcho ? { dev_code: code } : {}) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/me/phone/email/verify:
+ *   post:
+ *     summary: Confirm a phone number using the signed-in account email
+ *     description: Confirms the phone association based on access to the linked email; it does not prove SIM possession.
+ *     tags: [Profile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone, code]
+ *             properties:
+ *               phone: { type: string, example: "+15551234567" }
+ *               code: { type: string, pattern: '^\\d{6}$' }
+ *               pin: { type: string, description: Required when two-step verification is enabled }
+ *     responses:
+ *       200: { description: Phone confirmed and updated }
+ *       400: { description: Invalid input }
+ *       401: { description: Invalid code or security PIN }
+ *       409: { description: Phone is already in use or changed in another session }
+ *       429: { description: Too many verification attempts }
+ */
+router.post(
+  '/phone/email/verify',
+  phoneEmailVerificationLimiter,
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    const code = String(req.body?.code ?? '').trim();
+    const pin = String(req.body?.pin ?? '').trim();
+    if (!phone || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID_PHONE_CODE', message: 'Enter a valid phone number and 6-digit email code.' });
+    }
+
+    const user = await User.findById(req.userId)
+      .select('+twoFactorPinHash phone phoneVerifiedAt email emailVerifiedAt settings.security.twoFactorAuth')
+      .lean();
+    if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    if (!user.email || !user.emailVerifiedAt) {
+      return res.status(409).json({ error: 'EMAIL_NOT_VERIFIED', message: 'Verify an email address on your account first.' });
+    }
+    if (phone === user.phone && user.phoneVerifiedAt) {
+      return res.status(409).json({ error: 'PHONE_VERIFIED', message: 'That phone number is already verified.' });
+    }
+    if (await User.exists({ phone, _id: { $ne: req.userId } })) {
+      return res.status(409).json({ error: 'PHONE_IN_USE', message: 'That phone number is already linked to an account.' });
+    }
+
+    const otp = await EmailOtp.findOne({
+      user: req.userId,
+      phone,
+      email: user.email,
+      purpose: 'phone-change',
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+    if (!otp) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    const updatedOtp = await EmailOtp.findOneAndUpdate(
+      { _id: otp._id, attempts: { $lt: 5 } },
+      { $inc: { attempts: 1 } },
+      { new: true }
+    );
+    if (!updatedOtp) {
+      return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+    }
+    if (!safeEqual(updatedOtp.codeHash, hashOtp(config.jwtSecret, `${req.userId}:${phone}:${user.email}`, code))) {
+      return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    }
+
+    const update = { phone, phoneVerifiedAt: new Date() };
+    if (user.settings?.security?.twoFactorAuth) {
+      if (!/^\d{6,12}$/.test(pin) || !user.twoFactorPinHash
+        || !safeEqual(user.twoFactorPinHash, hashOtp(config.jwtSecret, user.phone ?? user.email, `two-factor:${pin}`))) {
+        return res.status(401).json({ error: 'BAD_PIN', message: 'Enter your current 6 to 12 digit security PIN.' });
+      }
+      update.twoFactorPinHash = hashOtp(config.jwtSecret, phone, `two-factor:${pin}`);
+    }
+
+    let updatedUser;
+    try {
+      updatedUser = await User.findOneAndUpdate(
+        { _id: req.userId, email: user.email, phone: user.phone ?? { $in: [null] } },
+        { $set: update },
+        { new: true, runValidators: true }
+      ).lean();
+    } catch (err) {
+      if (err?.code === 11000) {
+        return res.status(409).json({ error: 'PHONE_IN_USE', message: 'That phone number is already linked to an account.' });
+      }
+      throw err;
+    }
+    if (!updatedUser) {
+      return res.status(409).json({ error: 'PHONE_CHANGED', message: 'Your phone number changed in another session. Refresh and try again.' });
+    }
+    await EmailOtp.deleteMany({ user: req.userId, purpose: 'phone-change' });
+    return res.json(privateProfileJson(updatedUser));
+  })
+);
+
+/**
+ * @openapi
  * /api/me/phone:
  *   patch:
  *     summary: Change the signed-in user's phone number
- *     description: Requires an SMS code sent to the new number and, when enabled, the current account security PIN.
+ *     description: Legacy SMS verification endpoint. The app confirms phone numbers by email through /api/me/phone/email/request and /api/me/phone/email/verify.
  *     tags: [Profile]
  *     requestBody:
  *       required: true
@@ -192,11 +381,15 @@ router.patch(
       return res.status(400).json({ error: 'INVALID_PHONE_CHANGE', message: 'Enter a valid phone number and SMS code.' });
     }
 
-    const user = await User.findById(req.userId).select('+twoFactorPinHash phone settings.security.twoFactorAuth').lean();
+    const user = await User.findById(req.userId)
+      .select('+twoFactorPinHash phone phoneVerifiedAt settings.security.twoFactorAuth')
+      .lean();
     if (!user) return res.status(401).json({ error: 'UNAUTHORIZED' });
-    if (phone === user.phone) return res.status(400).json({ error: 'PHONE_UNCHANGED', message: 'Enter a different phone number.' });
+    if (phone === user.phone && user.phoneVerifiedAt) {
+      return res.status(400).json({ error: 'PHONE_UNCHANGED', message: 'That phone number is already verified.' });
+    }
 
-    if (await User.exists({ phone })) {
+    if (await User.exists({ phone, _id: { $ne: req.userId } })) {
       return res.status(409).json({ error: 'PHONE_IN_USE', message: 'That phone number is already linked to an account.' });
     }
 
@@ -220,7 +413,7 @@ router.patch(
     }
     if (!validCode) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
 
-    const update = { phone };
+    const update = { phone, phoneVerifiedAt: new Date() };
     if (user.settings?.security?.twoFactorAuth) {
       if (!/^\d{6,12}$/.test(pin) || !user.twoFactorPinHash
         || !safeEqual(user.twoFactorPinHash, hashOtp(config.jwtSecret, user.phone, `two-factor:${pin}`))) {
@@ -437,6 +630,7 @@ router.post(
     const update = {
       'settings.security.twoFactorAuth': enabled,
       twoFactorPinHash: enabled ? hashOtp(config.jwtSecret, user.phone, `two-factor:${pin}`) : null,
+      phoneVerifiedAt: new Date(),
     };
     await User.updateOne({ _id: req.userId }, { $set: update });
     res.json({ ok: true, enabled });

@@ -74,7 +74,15 @@ test('every $ref in the spec points to something that exists', () => {
 });
 
 test('public endpoints have no lock, private ones need the bearer token', () => {
-  for (const [method, path] of [['get', '/'], ['post', '/api/auth/otp/request'], ['post', '/api/auth/otp/verify'], ['get', '/api/health'], ['get', '/api/files/{key}']]) {
+  for (const [method, path] of [
+    ['get', '/'],
+    ['post', '/api/auth/otp/request'],
+    ['post', '/api/auth/otp/verify'],
+    ['post', '/api/auth/otp/email/request'],
+    ['post', '/api/auth/otp/email/verify'],
+    ['get', '/api/health'],
+    ['get', '/api/files/{key}'],
+  ]) {
     assert.deepEqual(swaggerSpec.paths[path][method].security, [], `${method} ${path} should be public`);
   }
   assert.equal(swaggerSpec.paths['/api/chats'].get.security, undefined); // inherits the global bearerAuth
@@ -148,6 +156,20 @@ test('device-link endpoints validate requests and require an authenticated appro
       body: JSON.stringify({ email: 'not-an-email', code: '123456' }),
     });
     assert.equal(invalidEmailVerification.status, 400);
+
+    const invalidPhoneEmailRequest = await fetch(`${baseUrl}/api/auth/otp/email/request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: 'invalid', email: 'not-an-email' }),
+    });
+    assert.equal(invalidPhoneEmailRequest.status, 400);
+
+    const invalidPhoneEmailVerification = await fetch(`${baseUrl}/api/auth/otp/email/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: 'invalid', email: 'not-an-email', code: '123456' }),
+    });
+    assert.equal(invalidPhoneEmailVerification.status, 400);
 
     const unauthenticatedEmailLink = await fetch(`${baseUrl}/api/me/email/request`, {
       method: 'POST',

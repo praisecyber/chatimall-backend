@@ -16,8 +16,8 @@ const need = (keys) => {
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const smsProvider = process.env.SMS_PROVIDER || 'webhook';
-if (!['webhook', 'twilio', 'twilio-verify'].includes(smsProvider)) {
-  throw new Error('SMS_PROVIDER must be "webhook", "twilio", or "twilio-verify".');
+if (!['webhook', 'twilio', 'twilio-verify', 'termii'].includes(smsProvider)) {
+  throw new Error('SMS_PROVIDER must be "webhook", "twilio", "twilio-verify", or "termii".');
 }
 const emailProvider = process.env.EMAIL_PROVIDER || 'webhook';
 if (!['webhook', 'resend'].includes(emailProvider)) {
@@ -77,6 +77,8 @@ export const config = {
   smsProvider,
   smsWebhookUrl: process.env.SMS_WEBHOOK_URL || '',
   smsWebhookToken: process.env.SMS_WEBHOOK_TOKEN || '',
+  termiiApiKey: process.env.TERMII_API_KEY || '',
+  termiiSenderId: process.env.TERMII_SENDER_ID || '',
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
   twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
   twilioApiKeySid: process.env.TWILIO_API_KEY_SID || '',

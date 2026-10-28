@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { hashOtp, isOwnFileUrl, makeOriginChecker, normalizeEmail, normalizePhone, parseWatchUrl, previewOf, publicEncryptionKeyId, safeEqual } from '../src/util.js';
+import { hashOtp, isOwnFileUrl, makeOriginChecker, normalizeEmail, normalizePhone, parseWatchUrl, phoneEmailAccountConflict, previewOf, publicEncryptionKeyId, safeEqual } from '../src/util.js';
 import { messageJson, userJson } from '../src/serialize.js';
 import { privateProfileJson } from '../src/routes/_shared.js';
 
@@ -19,6 +19,27 @@ test('normalizeEmail lowercases valid addresses and rejects malformed input', ()
   assert.equal(normalizeEmail('not-an-email'), null);
   assert.equal(normalizeEmail('user@localhost'), null);
   assert.equal(normalizeEmail('x'.repeat(250) + '@example.com'), null);
+});
+
+test('phone and email sign-in rejects identifiers already linked to different accounts', () => {
+  const phoneUser = { _id: 'phone-user', phone: '2348012345678', email: 'old@example.com', emailVerifiedAt: new Date() };
+  const emailUser = { _id: 'email-user', phone: '2348098765432', email: 'new@example.com' };
+
+  assert.equal(phoneEmailAccountConflict(phoneUser, null, phoneUser.phone, 'new@example.com'), 'PHONE_ALREADY_USED');
+  assert.equal(phoneEmailAccountConflict(null, emailUser, '2348012345678', emailUser.email), 'EMAIL_ALREADY_USED');
+  assert.equal(phoneEmailAccountConflict(phoneUser, emailUser, phoneUser.phone, emailUser.email), 'ACCOUNT_DETAILS_MISMATCH');
+  assert.equal(
+    phoneEmailAccountConflict({ ...phoneUser, email: null }, null, phoneUser.phone, 'new@example.com'),
+    'PHONE_EMAIL_NOT_LINKED'
+  );
+  assert.equal(
+    phoneEmailAccountConflict(null, { ...emailUser, phone: null }, '2348012345678', emailUser.email),
+    null
+  );
+  assert.equal(
+    phoneEmailAccountConflict({ ...phoneUser, emailVerifiedAt: null }, null, phoneUser.phone, phoneUser.email),
+    'PHONE_EMAIL_NOT_LINKED'
+  );
 });
 
 test('otp hashing is deterministic and phone/code specific', () => {
@@ -54,7 +75,7 @@ test('Twilio SMS uses the configured sender and authenticated API payload', () =
   const script = `
     globalThis.fetch = async (url, options) => {
       console.log(JSON.stringify({ url: String(url), authorization: options.headers.Authorization, body: options.body }));
-      return { ok: true };
+      return { ok: true, json: async () => ({}) };
     };
     const { sendSms } = await import('./src/sms.js');
     await sendSms('2348012345678', 'Your Chatimall code is 123456.');
@@ -82,6 +103,85 @@ test('Twilio SMS uses the configured sender and authenticated API payload', () =
   assert.equal(body.get('To'), '+2348012345678');
   assert.equal(body.get('From'), '+15005550006');
   assert.equal(body.get('Body'), 'Your Chatimall code is 123456.');
+});
+
+test('Twilio direct SMS supports API-key authentication and reports Twilio error codes', () => {
+  const script = `
+    globalThis.fetch = async (url, options) => {
+      console.log(JSON.stringify({ authorization: options.headers.Authorization }));
+      return {
+        ok: false,
+        status: 403,
+        text: async () => JSON.stringify({ code: 20003, message: 'Authentication Error' }),
+      };
+    };
+    const { sendSms } = await import('./src/sms.js');
+    try {
+      await sendSms('2348012345678', 'Your Chatimall code is 123456.');
+    } catch (error) {
+      console.log(error.message);
+    }
+  `;
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      MONGODB_URI: 'mongodb://127.0.0.1:27017/test-sms-api-key',
+      JWT_SECRET: 'test-secret',
+      SMS_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: `AC${'a'.repeat(32)}`,
+      TWILIO_AUTH_TOKEN: '',
+      TWILIO_API_KEY_SID: `SK${'c'.repeat(32)}`,
+      TWILIO_API_KEY_SECRET: 'test-api-key-secret',
+      TWILIO_FROM_NUMBER: '+15005550006',
+      TWILIO_MESSAGING_SERVICE_SID: '',
+    },
+  });
+  assert.equal(child.status, 0, child.stderr);
+  const [requestLine, errorLine] = child.stdout.trim().split(/\r?\n/);
+  const request = JSON.parse(requestLine);
+  assert.equal(
+    request.authorization,
+    `Basic ${Buffer.from(`SK${'c'.repeat(32)}:test-api-key-secret`).toString('base64')}`
+  );
+  assert.equal(errorLine, 'Twilio SMS gateway responded 403 (Twilio error 20003)');
+});
+
+test('Termii SMS sends the OTP using the configured API key and sender ID', () => {
+  const script = `
+    globalThis.fetch = async (url, options) => {
+      console.log(JSON.stringify({ url: String(url), body: JSON.parse(options.body) }));
+      return { ok: true, json: async () => ({ code: 'ok', message_id: 'test-message-id' }) };
+    };
+    const { sendSms } = await import('./src/sms.js');
+    await sendSms('2348012345678', 'Your Chatimall code is 123456.');
+  `;
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      MONGODB_URI: 'mongodb://127.0.0.1:27017/test-sms-termii',
+      JWT_SECRET: 'test-secret',
+      SMS_PROVIDER: 'termii',
+      TERMII_API_KEY: 'test-termii-api-key',
+      TERMII_SENDER_ID: 'Chatimall',
+    },
+  });
+  assert.equal(child.status, 0, child.stderr);
+  const request = JSON.parse(child.stdout.trim());
+  assert.equal(request.url, 'https://api.ng.termii.com/api/sms/send');
+  assert.deepEqual(request.body, {
+    api_key: 'test-termii-api-key',
+    to: '2348012345678',
+    from: 'Chatimall',
+    sms: 'Your Chatimall code is 123456.',
+    type: 'plain',
+    channel: 'generic',
+  });
 });
 
 test('Twilio Verify starts an SMS verification using the configured service', () => {
@@ -217,6 +317,7 @@ test('previews and serializers', () => {
   const privateProfile = privateProfileJson({
     _id: 'u',
     phone: '1',
+    phoneVerifiedAt: now,
     email: 'private@example.com',
     emailVerifiedAt: now,
     name: 'N',
@@ -225,6 +326,7 @@ test('previews and serializers', () => {
   });
   assert.equal(privateProfile.email, 'private@example.com');
   assert.equal(privateProfile.email_verified, true);
+  assert.equal(privateProfile.phone_verified, true);
 });
 
 test('CORS origin checker: exact, wildcard, empty list, no origin', () => {

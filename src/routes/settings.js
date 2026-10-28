@@ -68,7 +68,11 @@ router.post('/contacts/sync', wrap(async (req, res) => {
   }
 
   const byPhone = new Map(normalized.map((contact) => [contact.phone, contact]));
-  const users = await User.find({ phone: { $in: [...byPhone.keys()] }, _id: { $ne: req.userId } })
+  const users = await User.find({
+    phone: { $in: [...byPhone.keys()] },
+    phoneVerifiedAt: { $ne: null },
+    _id: { $ne: req.userId },
+  })
     .select('phone name avatarUrl')
     .lean();
   const conversations = await Conversation.find({ isGroup: false, members: req.userId }).select('_id members').lean();

@@ -8,9 +8,22 @@ import { disconnectPrimarySession } from '../realtime.js';
 import { checkPhoneVerification, sendSms, startPhoneVerification } from '../sms.js';
 import { sendEmailOtp } from '../email.js';
 import { privateProfileJson, serialize } from './_shared.js';
-import { hashOtp, normalizeEmail, normalizePhone, safeEqual, wrap } from '../util.js';
+import { hashOtp, normalizeEmail, normalizePhone, phoneEmailAccountConflict, safeEqual, wrap } from '../util.js';
 
 const router = Router();
+const accountConflictMessages = {
+  PHONE_ALREADY_USED: 'This phone number is already linked to a different email. Sign in using the email already linked to this number.',
+  EMAIL_ALREADY_USED: 'This email is already linked to a different phone number. Use the email linked to this number or sign in using the phone linked to this email.',
+  PHONE_EMAIL_NOT_LINKED: 'This phone account has no verified email linked to it. Sign in with the existing phone verification method or contact support to link an email.',
+  ACCOUNT_DETAILS_MISMATCH: 'This phone number and email are already associated with different accounts.',
+};
+
+function respondWithAccountConflict(res, conflict) {
+  return res.status(409).json({
+    error: conflict,
+    message: accountConflictMessages[conflict],
+  });
+}
 
 /**
  * @openapi
@@ -220,6 +233,7 @@ router.post(
       { $setOnInsert: { phone } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    user.phoneVerifiedAt = new Date();
     if (user.settings?.security?.twoFactorAuth) {
       const pin = String(req.body?.pin ?? '').trim();
       if (!/^\d{6,12}$/.test(pin)) {
@@ -236,6 +250,222 @@ router.post(
     disconnectPrimarySession(String(user._id));
     await Otp.deleteMany({ phone });
     res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/auth/otp/email/request:
+ *   post:
+ *     summary: Send a phone sign-in code to the supplied email address
+ *     description: Codes are sent to the email linked to the account. Completing email OTP marks the submitted phone as verified for this account; it confirms access to the email, not possession of the SIM.
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone, email]
+ *             properties:
+ *               phone: { type: string, example: "+2349121598033" }
+ *               email: { type: string, format: email }
+ *     responses:
+ *       200: { description: Code sent by email }
+ *       400: { description: Invalid phone number or email }
+ *       409: { description: Email or phone is already linked elsewhere, or this existing phone account has no verified email }
+ *       429: { description: Too many code requests }
+ *       502: { description: Email provider could not send the code }
+ *       503: { description: Email delivery is not configured }
+ */
+router.post(
+  '/otp/email/request',
+  limiter,
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    const email = normalizeEmail(req.body?.email);
+    if (!phone || !email) {
+      return res.status(400).json({ error: 'INVALID', message: 'Enter a valid phone number and email address.' });
+    }
+    if (config.testPhones[phone]) return res.json({ ok: true });
+
+    const [phoneUser, emailUser] = await Promise.all([
+      User.findOne({ phone }).select('_id phone email emailVerifiedAt'),
+      User.findOne({ email }).select('_id phone email'),
+    ]);
+    const accountConflict = phoneEmailAccountConflict(phoneUser, emailUser, phone, email);
+    if (accountConflict) return respondWithAccountConflict(res, accountConflict);
+
+    const recent = await EmailOtp.countDocuments({
+      phone,
+      purpose: 'phone-login',
+      createdAt: { $gt: new Date(Date.now() - 3600 * 1000) },
+    });
+    if (recent >= 5) {
+      return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many codes requested for this number. Try again in an hour.' });
+    }
+
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    const otp = await EmailOtp.create({
+      phone,
+      email,
+      user: phoneUser?._id ?? emailUser?._id,
+      purpose: 'phone-login',
+      codeHash: hashOtp(config.jwtSecret, `${phone}:${email}`, code),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    try {
+      await sendEmailOtp(email, code);
+    } catch (err) {
+      await EmailOtp.deleteOne({ _id: otp._id }).catch((cleanupError) => {
+        console.error('Could not remove a phone sign-in OTP after email delivery failed:', cleanupError);
+      });
+      if (err.message === 'EMAIL_NOT_CONFIGURED') {
+        console.error('[auth] Email delivery is not configured.');
+        return res.status(503).json({
+          error: 'EMAIL_NOT_CONFIGURED',
+          message: 'Email verification is temporarily unavailable. Please try again later.',
+        });
+      }
+      console.error('Phone sign-in email OTP delivery failed:', err.message);
+      return res.status(502).json({ error: 'EMAIL_FAILED', message: 'Could not send the verification email. Try again.' });
+    }
+    return res.json({ ok: true, ...(config.devOtpEcho ? { dev_code: code } : {}) });
+  })
+);
+
+/**
+ * @openapi
+ * /api/auth/otp/email/verify:
+ *   post:
+ *     summary: Verify an email code for a phone sign-in
+ *     description: The verified email is associated with the submitted phone account.
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone, email, code]
+ *             properties:
+ *               phone: { type: string, example: "+2349121598033" }
+ *               email: { type: string, format: email }
+ *               code: { type: string, pattern: '^\\d{4,8}$' }
+ *               pin: { type: string, description: Required when account security PIN is enabled }
+ *     responses:
+ *       200: { description: Login successful }
+ *       400: { description: Invalid input }
+ *       401: { description: Invalid or expired code }
+ *       409: { description: Phone and email are associated with different accounts }
+ *       428: { description: Account security PIN required }
+ *       429: { description: Too many verification attempts }
+ */
+router.post(
+  '/otp/email/verify',
+  verifyLimiter,
+  wrap(async (req, res) => {
+    const phone = normalizePhone(req.body?.phone);
+    const email = normalizeEmail(req.body?.email);
+    const code = String(req.body?.code ?? '').trim();
+    if (!phone || !email || !/^\d{4,8}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID', message: 'Enter your phone number, email, and the code we sent you.' });
+    }
+
+    let codeIsValid = false;
+    const fixedCode = config.testPhones[phone];
+    if (fixedCode) {
+      codeIsValid = safeEqual(fixedCode, code);
+    } else {
+      const otp = await EmailOtp.findOne({
+        phone,
+        email,
+        purpose: 'phone-login',
+        expiresAt: { $gt: new Date() },
+      }).sort({ createdAt: -1 });
+      if (!otp) return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+
+      const updatedOtp = await EmailOtp.findOneAndUpdate(
+        { _id: otp._id, attempts: { $lt: 5 } },
+        { $inc: { attempts: 1 } },
+        { new: true }
+      );
+      if (!updatedOtp) {
+        return res.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many wrong codes. Request a new one.' });
+      }
+      codeIsValid = safeEqual(updatedOtp.codeHash, hashOtp(config.jwtSecret, `${phone}:${email}`, code));
+    }
+    if (!codeIsValid) {
+      return res.status(401).json({ error: 'BAD_CODE', message: 'That code is incorrect or has expired.' });
+    }
+
+    const [phoneUser, emailUser] = await Promise.all([
+      User.findOne({ phone }).select('+twoFactorPinHash'),
+      User.findOne({ email }).select('+twoFactorPinHash'),
+    ]);
+    const accountConflict = phoneEmailAccountConflict(phoneUser, emailUser, phone, email);
+    if (accountConflict) return respondWithAccountConflict(res, accountConflict);
+
+    let user = phoneUser ?? emailUser;
+    const pinIdentity = user?.phone ?? user?.email ?? phone;
+    if (!user) {
+      try {
+        user = await User.create({ phone, email, emailVerifiedAt: new Date() });
+      } catch (err) {
+        if (err?.code === 11000) {
+          const conflict = err.keyPattern?.phone
+            ? 'PHONE_ALREADY_USED'
+            : err.keyPattern?.email
+              ? 'EMAIL_ALREADY_USED'
+              : 'ACCOUNT_DETAILS_MISMATCH';
+          return respondWithAccountConflict(res, conflict);
+        }
+        throw err;
+      }
+    } else {
+      if (user.phone !== phone) {
+        user.phone = phone;
+        user.phoneVerifiedAt = null;
+      }
+      user.email = email;
+      user.emailVerifiedAt = new Date();
+    }
+
+    if (user.settings?.security?.twoFactorAuth) {
+      const pin = String(req.body?.pin ?? '').trim();
+      if (!/^\d{6,12}$/.test(pin)) {
+        return res.status(428).json({ error: 'SECOND_FACTOR_REQUIRED', message: 'Enter your account security PIN.' });
+      }
+      const expected = user.twoFactorPinHash;
+      if (!expected || !safeEqual(expected, hashOtp(config.jwtSecret, pinIdentity, `two-factor:${pin}`))) {
+        return res.status(401).json({ error: 'BAD_SECOND_FACTOR', message: 'The account security PIN is incorrect.' });
+      }
+      if (pinIdentity !== phone) {
+        user.twoFactorPinHash = hashOtp(config.jwtSecret, phone, `two-factor:${pin}`);
+      }
+    }
+
+    user.phoneVerifiedAt = new Date();
+    const sessionId = crypto.randomUUID();
+    user.activeSessionId = sessionId;
+    try {
+      await user.save();
+    } catch (err) {
+      if (err?.code === 11000) {
+        const conflict = err.keyPattern?.phone
+          ? 'PHONE_ALREADY_USED'
+          : err.keyPattern?.email
+            ? 'EMAIL_ALREADY_USED'
+            : 'ACCOUNT_DETAILS_MISMATCH';
+        return respondWithAccountConflict(res, conflict);
+      }
+      throw err;
+    }
+    disconnectPrimarySession(String(user._id));
+    await EmailOtp.deleteMany({ phone, purpose: 'phone-login' });
+    return res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
   })
 );
 
@@ -313,6 +543,7 @@ router.post(
  * /api/auth/email/otp/verify:
  *   post:
  *     summary: Verify an email sign-in code and return a session
+ *     description: If this account has a phone number, successful email sign-in also marks that phone as verified for the account.
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -384,10 +615,13 @@ router.post(
       }
     }
     const sessionId = crypto.randomUUID();
-    await User.updateOne({ _id: user._id }, { $set: { activeSessionId: sessionId } });
+    const update = { activeSessionId: sessionId };
+    if (user.phone) update.phoneVerifiedAt = new Date();
+    const updatedUser = await User.findByIdAndUpdate(user._id, { $set: update }, { new: true }).lean();
+    if (!updatedUser) return res.status(401).json({ error: 'UNAUTHORIZED' });
     disconnectPrimarySession(String(user._id));
     await EmailOtp.deleteMany({ email, purpose: 'login' });
-    return res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(user) });
+    return res.json({ token: signToken(user._id, null, sessionId), user: privateProfileJson(updatedUser) });
   })
 );
 

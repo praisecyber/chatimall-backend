@@ -18,6 +18,17 @@ export function normalizeEmail(input) {
   return email;
 }
 
+export function phoneEmailAccountConflict(phoneUser, emailUser, phone, email) {
+  const phoneHasDifferentEmail = Boolean(phoneUser?.email && phoneUser.email !== email);
+  const emailHasDifferentPhone = Boolean(emailUser?.phone && emailUser.phone !== phone);
+  const accountsDiffer = Boolean(phoneUser && emailUser && String(phoneUser._id) !== String(emailUser._id));
+  if (accountsDiffer) return 'ACCOUNT_DETAILS_MISMATCH';
+  if (phoneHasDifferentEmail) return 'PHONE_ALREADY_USED';
+  if (emailHasDifferentPhone) return 'EMAIL_ALREADY_USED';
+  if (phoneUser && (!phoneUser.email || !phoneUser.emailVerifiedAt)) return 'PHONE_EMAIL_NOT_LINKED';
+  return null;
+}
+
 export function hashOtp(secret, phone, code) {
   return crypto.createHmac('sha256', secret).update(`${phone}:${code}`).digest('hex');
 }
