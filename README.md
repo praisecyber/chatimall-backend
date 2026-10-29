@@ -26,6 +26,7 @@ npm test
 | `PORT` | no (default 4000) | HTTP listen port |
 | `MONGODB_URI` | **yes** | MongoDB or Atlas connection string |
 | `JWT_SECRET` | **yes** | Signing secret for auth tokens — generate with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+| `ADMIN_EMAILS` | no | Comma-separated verified email addresses with super-admin access; defaults to `praisecyber2005@gmail.com`. The address must already be linked and verified on its account |
 | `CLIENT_ORIGINS` | recommended | Comma-separated CORS origins (e.g. `http://localhost:5173,https://chatimall.vercel.app`) |
 | `TRANSLATE_SERVICE_URL` | no (default `http://localhost:8787`) | Python translate-service for voice-note transcription/translation; leave unset to disable |
 | `FCM_SERVICE_ACCOUNT` | no | Firebase push notifications (JSON string) |
@@ -34,6 +35,7 @@ npm test
 | `TIKTOK_REDIRECT_URI` | when enabling TikTok linking | Exact HTTPS callback registered in Login Kit, e.g. `https://YOUR_BACKEND_HOST/api/tiktok/callback` |
 | `TIKTOK_TOKEN_ENCRYPTION_KEY` | when enabling TikTok linking | Base64-encoded 32-byte key used to encrypt stored TikTok tokens; generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` and keep stable |
 | `TIKTOK_FRONTEND_URL` | no | Chatimall frontend URL shown after TikTok authorization |
+
 | `SMS_PROVIDER` | no (default `webhook`) | `termii`, `twilio-verify`, `twilio` (direct SMS), or `webhook` |
 | `TERMII_API_KEY` | when using `termii` | Termii API key; keep private |
 | `TERMII_SENDER_ID` | when using `termii` | Sender ID registered and activated with Termii |
@@ -50,6 +52,8 @@ npm test
 | `EMAIL_FROM_ADDRESS` | when using `resend` | Sender address on a domain verified in Resend |
 | `EMAIL_WEBHOOK_URL` | when using `webhook` | Email gateway endpoint |
 | `EMAIL_WEBHOOK_TOKEN` | optional | Bearer token for the email gateway |
+
+The Admin Panel's bulk reset is available in production only to super-admins and requires the exact confirmation `RESET NON-ADMIN DATA`. It permanently removes non-admin accounts and their associated app data while preserving staff/admin accounts and system settings. This action is destructive; protect super-admin credentials carefully. Admin email matching never creates an account or bypasses sign-in: the matching account must already have that email verified.
 
 Twilio trial SMS is restricted by the account and destination country; trial console flows can be limited to pre-approved templates and verified recipient numbers. For app-generated phone OTPs, use Twilio Verify with a configured Verify Service, or a direct Twilio sender that is permitted for your trial. Keep all Twilio credentials in the deployment secret environment, never in `.env.example` or source control.
 

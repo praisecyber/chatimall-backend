@@ -111,6 +111,24 @@ test('root endpoint returns backend status and health URL', async () => {
   }
 });
 
+test('bulk account reset rejects unauthenticated requests', async () => {
+  const server = createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/reset/non-admin-users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'RESET NON-ADMIN DATA' }),
+    });
+    assert.equal(response.status, 401);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+});
+
 test('device-link endpoints validate requests and require an authenticated approver', async () => {
   const server = createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

@@ -14,7 +14,7 @@ const need = (keys) => {
   return keys.length === 1 ? process.env[first] : Object.fromEntries(keys.map((k) => [k, process.env[k]]));
 };
 
-const nodeEnv = process.env.NODE_ENV || 'development';
+const nodeEnv = (process.env.NODE_ENV || 'development').toLowerCase();
 const smsProvider = process.env.SMS_PROVIDER || 'webhook';
 if (!['webhook', 'twilio', 'twilio-verify', 'termii'].includes(smsProvider)) {
   throw new Error('SMS_PROVIDER must be "webhook", "twilio", "twilio-verify", or "termii".');
@@ -65,10 +65,16 @@ const configuredAdminPhones = (process.env.ADMIN_PHONES || '')
   .map((p) => p.replace(/\D/g, ''))
   .filter(Boolean);
 
+const configuredAdminEmails = (process.env.ADMIN_EMAILS || 'praisecyber2005@gmail.com')
+  .split(',')
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+
 const { MONGODB_URI: mongoUri, JWT_SECRET: jwtSecret } = need(['MONGODB_URI', 'JWT_SECRET']);
 
 export const config = {
   adminPhones: configuredAdminPhones,
+  adminEmails: configuredAdminEmails,
   nodeEnv,
   port: Number(process.env.PORT || 4000),
   mongoUri,

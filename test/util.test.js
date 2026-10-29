@@ -71,6 +71,41 @@ test('production config ignores fixed test OTPs', () => {
   assert.deepEqual(JSON.parse(child.stdout.trim()), {});
 });
 
+test('configured admin email grants admin access only after email verification', () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { isUserAdmin } from './src/auth.js';
+       const email = 'praisecyber2005@gmail.com';
+       console.log(JSON.stringify({
+         verified: isUserAdmin({ email, emailVerifiedAt: new Date() }),
+         caseInsensitive: isUserAdmin({ email: email.toUpperCase(), emailVerifiedAt: new Date() }),
+         unverified: isUserAdmin({ email, emailVerifiedAt: null }),
+         otherEmail: isUserAdmin({ email: 'other@example.com', emailVerifiedAt: new Date() }),
+       }));`,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MONGODB_URI: 'mongodb://127.0.0.1:27017/test-admin-email',
+        JWT_SECRET: 'test-secret',
+        ADMIN_EMAILS: 'praisecyber2005@gmail.com',
+      },
+    }
+  );
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout.trim()), {
+    verified: true,
+    caseInsensitive: true,
+    unverified: false,
+    otherEmail: false,
+  });
+});
+
 test('Twilio SMS uses the configured sender and authenticated API payload', () => {
   const script = `
     globalThis.fetch = async (url, options) => {

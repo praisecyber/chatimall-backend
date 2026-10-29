@@ -17,12 +17,27 @@ import { wrap } from '../util.js';
 import { getIo, emitToUsers } from '../realtime.js';
 import { startDirectConversation } from './_shared.js';
 import { getCountryForPhone } from '../countries.js';
+import { resetNonAdminData } from '../admin-reset.js';
 
 const router = Router();
 
 // Strict security: all endpoints require valid authentication AND staff/admin verification
 router.use(requireAuth);
 router.use(requireAdmin);
+
+router.post(
+  '/reset/non-admin-users',
+  requireSuperAdmin,
+  wrap(async (req, res) => {
+    if (req.body?.confirmation !== 'RESET NON-ADMIN DATA') {
+      return res.status(400).json({ error: 'CONFIRMATION_REQUIRED' });
+    }
+
+    const result = await resetNonAdminData();
+    console.warn(`[admin-reset] actor=${req.userId} deletedUsers=${result.deletedUsers} preservedAdmins=${result.preservedAdmins}`);
+    res.json({ ok: true, result });
+  })
+);
 
 async function getOrCreateAppConfig() {
   let cfg = await AppConfig.findOne({ key: 'system_settings' });

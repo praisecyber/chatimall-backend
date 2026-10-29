@@ -1379,6 +1379,32 @@
  *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/admin/reset/non-admin-users:
+ *   post:
+ *     summary: Remove non-admin accounts and associated user data (Super Admin only; confirmation required)
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [confirmation]
+ *             properties:
+ *               confirmation: { type: string, enum: ['RESET NON-ADMIN DATA'] }
+ *     responses:
+ *       200:
+ *         description: Non-admin accounts and their associated records were removed; staff accounts and system settings remain
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 result: { type: object }
+ *       400: { description: The required confirmation text was missing or incorrect }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       403: { description: Caller is not a super-admin }
  * /api/admin/overview:
  *   get:
  *     summary: Real-time platform metrics and activity (Admin only)

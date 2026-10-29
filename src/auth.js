@@ -61,6 +61,12 @@ export function isUserAdmin(userOrPhone) {
   if (!userOrPhone) return false;
   if (typeof userOrPhone === 'object' && userOrPhone !== null) {
     if (userOrPhone.role === 'super_admin') return true;
+    if (
+      userOrPhone.emailVerifiedAt &&
+      config.adminEmails.some((email) => email === String(userOrPhone.email || '').trim().toLowerCase())
+    ) {
+      return true;
+    }
   }
   const rawPhone = typeof userOrPhone === 'string' ? userOrPhone : userOrPhone.phone;
   if (!rawPhone) return false;
