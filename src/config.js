@@ -29,6 +29,7 @@ const DEFAULT_CLIENT_ORIGINS_PRODUCTION = [
   'https://*.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
+  'https://localhost',
   'capacitor://localhost',
   'http://localhost',
   'http://127.0.0.1',
