@@ -91,6 +91,28 @@ test('production CORS defaults allow the Android HTTPS origin', () => {
   assert.ok(JSON.parse(child.stdout.trim()).includes('https://localhost'));
 });
 
+test('production CORS preserves configured origins and adds the Android HTTPS origin', () => {
+  const child = spawnSync(
+    process.execPath,
+    ['--input-type=module', '-e', "import('./src/config.js').then(({ config }) => console.log(JSON.stringify(config.clientOrigins)))"],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        MONGODB_URI: 'mongodb://127.0.0.1:27017/test-config',
+        JWT_SECRET: 'test-secret',
+        CLIENT_ORIGINS: 'https://frontend.example',
+      },
+    }
+  );
+  assert.equal(child.status, 0, child.stderr);
+  const origins = JSON.parse(child.stdout.trim());
+  assert.ok(origins.includes('https://frontend.example'));
+  assert.ok(origins.includes('https://localhost'));
+});
+
 test('configured admin email grants admin access only after email verification', () => {
   const child = spawnSync(
     process.execPath,

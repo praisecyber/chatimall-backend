@@ -45,11 +45,9 @@ const envClientOrigins = (process.env.CLIENT_ORIGINS || '')
 // forgotten env var never accidentally opens CORS to the whole internet AND never
 // blocks the default Vercel frontend + local dev + Capacitor Android wrapper.
 const computedClientOrigins =
-  envClientOrigins.length > 0
+  nodeEnv === 'development'
     ? envClientOrigins
-    : nodeEnv === 'development'
-      ? []
-      : DEFAULT_CLIENT_ORIGINS_PRODUCTION;
+    : [...new Set([...(envClientOrigins.length > 0 ? envClientOrigins : DEFAULT_CLIENT_ORIGINS_PRODUCTION), 'https://localhost'])];
 
 const configuredTestPhones = {};
 for (const pair of (process.env.TEST_PHONES || '').split(',')) {
