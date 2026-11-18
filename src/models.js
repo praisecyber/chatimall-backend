@@ -287,11 +287,46 @@ const listingSchema = new Schema({
   title: { type: String, required: true, maxlength: 80 },
   description: { type: String, default: '', maxlength: 500 },
   price: { type: String, default: '', maxlength: 40 }, // free text — "₦15,000", "$40", "swap for..."
+  // Optional machine-readable price for checkout. Kept alongside the free-text `price` above:
+  // the text is what humans see, `priceCents` is the only thing an order is ever built from.
+  priceCents: { type: Number, default: null }, // smallest currency unit (e.g. kobo / cents)
+  currency: { type: String, default: 'USD' }, // uppercase 3-letter ISO code
   photoUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 listingSchema.index({ conversation: 1, createdAt: -1 });
 listingSchema.index({ seller: 1, createdAt: -1 });
+
+// An escrow order: the platform holds the buyer's payment (via OPay Cashier) until the buyer
+// confirms they got the item, then we record that a seller payout is owed. We never claim a
+// payout happened — see payout.status ('manual') — because we have no payout-transfer API.
+const orderSchema = new Schema({
+  listing: ref('Listing', { required: true }),
+  buyer: ref('User', { required: true }),
+  seller: ref('User', { required: true }),
+  amountCents: { type: Number, required: true },
+  currency: { type: String, required: true },
+  // Our unique OPay merchant order number — the only key that ties a gateway callback back to us.
+  // `unique: true` here already creates the unique index on reference.
+  reference: { type: String, required: true, unique: true },
+  status: { type: String, enum: ['pending', 'paid', 'released', 'canceled', 'failed'], default: 'pending' },
+  checkoutUrl: { type: String, default: null },
+  gatewayOrderNo: { type: String, default: null },
+  gatewayPayload: { type: Object, default: null }, // last verified callback/status payload
+  note: { type: String, default: '', maxlength: 300 },
+  paidAt: { type: Date, default: null },
+  releasedAt: { type: Date, default: null },
+  canceledAt: { type: Date, default: null },
+  // Escrow-release bookkeeping for the seller payout.
+  payout: {
+    status: { type: String, enum: ['none', 'pending', 'manual', 'paid', 'failed'], default: 'none' },
+    note: { type: String, default: null },
+    at: { type: Date, default: null },
+  },
+  createdAt: { type: Date, default: Date.now },
+});
+orderSchema.index({ buyer: 1, createdAt: -1 });
+orderSchema.index({ seller: 1, createdAt: -1 });
 
 export const User = model('User', userSchema);
 export const Otp = model('Otp', otpSchema);
@@ -312,6 +347,7 @@ export const WatchSession = model('WatchSession', watchSessionSchema);
 export const TikTokOAuthState = model('TikTokOAuthState', tiktokOAuthStateSchema);
 export const TikTokConnection = model('TikTokConnection', tiktokConnectionSchema);
 export const Listing = model('Listing', listingSchema);
+export const Order = model('Order', orderSchema);
 
 const appConfigSchema = new Schema({
   key: { type: String, required: true, unique: true },

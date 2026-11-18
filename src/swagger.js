@@ -63,6 +63,7 @@ const options = {
       { name: 'Watch Together' },
       { name: 'TikTok' },
       { name: 'Marketplace' },
+      { name: 'Orders' },
       { name: 'Status' },
       { name: 'Channels' },
       { name: 'Calls' },

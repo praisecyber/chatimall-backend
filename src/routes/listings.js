@@ -22,6 +22,8 @@ function listingJson(l) {
     title: l.title,
     description: l.description,
     price: l.price,
+    price_cents: l.priceCents ?? null,
+    currency: l.currency || 'USD',
     photo_url: l.photoUrl ?? null,
     created_at: new Date(l.createdAt).toISOString(),
   };
@@ -65,12 +67,39 @@ router.post(
     }
     if (photoUrl !== null && !isOwnFileUrl(photoUrl)) return res.status(400).json({ error: 'BAD_MEDIA' });
 
+    // Optional machine-readable price that makes the listing buyable. Absent/empty means "no
+    // numeric price yet" — the listing still displays, it just can't be ordered.
+    let priceCents = null;
+    const rawPriceCents = req.body?.price_cents;
+    if (rawPriceCents !== undefined && rawPriceCents !== null && rawPriceCents !== '') {
+      const n = Number(rawPriceCents);
+      if (!Number.isInteger(n) || n < 1 || n > 100000000) {
+        return res
+          .status(400)
+          .json({ error: 'INVALID_PRICE', message: 'price_cents must be a whole number between 1 and 100000000.' });
+      }
+      priceCents = n;
+    }
+    let currency = 'USD';
+    const rawCurrency = req.body?.currency;
+    if (rawCurrency !== undefined && rawCurrency !== null && rawCurrency !== '') {
+      const code = String(rawCurrency).trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(code)) {
+        return res
+          .status(400)
+          .json({ error: 'INVALID_PRICE', message: 'currency must be a 3-letter code like USD or NGN.' });
+      }
+      currency = code;
+    }
+
     const listing = await Listing.create({
       conversation: room._id,
       seller: req.userId,
       title,
       description,
       price,
+      priceCents,
+      currency,
       photoUrl,
     });
     res.status(201).json(listingJson(listing));

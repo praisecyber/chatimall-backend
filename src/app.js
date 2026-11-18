@@ -12,6 +12,7 @@ import groupRoutes from './routes/groups.js';
 import watchRoutes from './routes/watch.js';
 import tiktokRoutes from './routes/tiktok.js';
 import listingRoutes from './routes/listings.js';
+import orderRoutes from './routes/orders.js';
 import statusRoutes from './routes/status.js';
 import channelRoutes from './routes/channels.js';
 import callRoutes from './routes/calls.js';
@@ -62,6 +63,7 @@ export function createApp() {
   app.use('/api/watch', watchRoutes);
   app.use('/api/tiktok', tiktokRoutes);
   app.use('/api/listings', listingRoutes);
+  app.use('/api/orders', orderRoutes);
   app.use('/api/status', statusRoutes);
   app.use('/api/channels', channelRoutes);
   app.use('/api/calls', callRoutes);

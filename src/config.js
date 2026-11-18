@@ -106,7 +106,25 @@ export const config = {
   tiktokRedirectUri: process.env.TIKTOK_REDIRECT_URI || '',
   tiktokFrontendUrl: process.env.TIKTOK_FRONTEND_URL || 'https://chatimall-frontend.vercel.app',
   tiktokTokenEncryptionKey: process.env.TIKTOK_TOKEN_ENCRYPTION_KEY || '',
+  // ---- OPay Cashier (order payments; all optional) ----
+  // Empty credentials just means payments are unavailable — the server still boots.
+  opayMerchantId: process.env.OPAY_MERCHANT_ID || '',
+  opayPublicKey: process.env.OPAY_PUBLIC_KEY || '',
+  opayPrivateKey: process.env.OPAY_PRIVATE_KEY || '',
+  opayBaseUrl: (process.env.OPAY_BASE_URL || 'https://api.opaycheckout.com/api/v1/international').replace(/\/+$/, ''),
+  opayCountry: process.env.OPAY_COUNTRY || 'NG',
+  opayCurrency: process.env.OPAY_CURRENCY || 'USD',
+  opayCallbackUrl: process.env.OPAY_CALLBACK_URL || '',
+  opayReturnUrl: process.env.OPAY_RETURN_URL || '',
+  opayCancelUrl: process.env.OPAY_CANCEL_URL || '',
+  // Shown to whoever settles the seller payout by hand after an escrow release.
+  opayPayoutNote: process.env.OPAY_PAYOUT_NOTE || '',
 };
+
+/** True only when the OPay merchant id and both keys are present — i.e. we can actually take an order. */
+export function opayConfigured() {
+  return Boolean(config.opayMerchantId && config.opayPublicKey && config.opayPrivateKey);
+}
 
 if (config.tiktokTokenEncryptionKey) {
   const encryptionKey = Buffer.from(config.tiktokTokenEncryptionKey, 'base64');

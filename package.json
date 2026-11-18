@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test test/util.test.js test/docs.test.js"
+    "test": "node --test test/util.test.js test/docs.test.js test/orders.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

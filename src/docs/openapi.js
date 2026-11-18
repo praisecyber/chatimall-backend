@@ -1233,8 +1233,33 @@
  *         title: { type: string }
  *         description: { type: string }
  *         price: { type: string, description: Free text — "₦15,000", "$40", "swap for...", left as the seller wrote it }
+ *         price_cents: { type: integer, nullable: true, description: Machine-readable price in the currency's smallest unit; null means the listing cannot be ordered yet }
+ *         currency: { type: string, description: Uppercase 3-letter code, e.g. USD, default USD }
  *         photo_url: { type: string, nullable: true }
  *         created_at: { type: string, format: date-time }
+ *     Order:
+ *       type: object
+ *       properties:
+ *         id: { type: string }
+ *         listing_id: { type: string }
+ *         listing_title: { type: string, nullable: true }
+ *         buyer_id: { type: string }
+ *         seller_id: { type: string }
+ *         amount_cents: { type: integer, description: Total in the currency's smallest unit }
+ *         currency: { type: string }
+ *         status: { type: string, enum: [pending, paid, released, canceled, failed] }
+ *         reference: { type: string, description: Our unique OPay merchant order number }
+ *         checkout_url: { type: string, nullable: true }
+ *         note: { type: string }
+ *         created_at: { type: string, format: date-time }
+ *         paid_at: { type: string, format: date-time, nullable: true }
+ *         released_at: { type: string, format: date-time, nullable: true }
+ *         payout:
+ *           type: object
+ *           description: Escrow release bookkeeping. 'manual' means a human operator must settle the seller payout — the platform never claims a transfer it cannot verify.
+ *           properties:
+ *             status: { type: string, enum: [none, pending, manual, paid, failed] }
+ *             note: { type: string, nullable: true }
  */
 
 /**
@@ -1343,6 +1368,8 @@
  *               title: { type: string, minLength: 2, maxLength: 80 }
  *               description: { type: string, maxLength: 500 }
  *               price: { type: string, maxLength: 40, example: "₦15,000" }
+ *               price_cents: { type: integer, minimum: 1, maximum: 100000000, description: Optional machine-readable price (smallest currency unit) that makes the listing orderable; 400 INVALID_PRICE if not a whole number in range }
+ *               currency: { type: string, pattern: '^[A-Za-z]{3}$', example: USD, description: Optional 3-letter code; uppercased, otherwise 400 INVALID_PRICE }
  *               photo_url: { type: string, description: A path returned by /api/upload }
  *     responses:
  *       201:
@@ -1379,6 +1406,113 @@
  *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
  *       401: { $ref: '#/components/responses/Unauthorized' }
  *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/orders:
+ *   post:
+ *     summary: Start an escrow order for a listing and get an OPay checkout URL
+ *     description: Creates a pending order and calls OPay Cashier. The amount always comes from the listing's numeric price, never the client.
+ *     tags: [Orders]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [listing_id]
+ *             properties:
+ *               listing_id: { type: string, description: The listing to buy }
+ *               note: { type: string, maxLength: 300 }
+ *     responses:
+ *       201:
+ *         description: Order created; checkout_url is where to send the buyer
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } }
+ *       400:
+ *         description: SELF_ORDER, PRICE_NOT_SET or ORDER_PENDING
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ *       502:
+ *         description: GATEWAY — OPay could not start the checkout (the order is marked failed)
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ *       503:
+ *         description: PAYMENTS_UNAVAILABLE — OPay is not configured on this server
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ * /api/orders/mine:
+ *   get:
+ *     summary: My orders, as buyer or seller
+ *     tags: [Orders]
+ *     responses:
+ *       200:
+ *         description: Orders, newest first
+ *         content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Order' } } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ * /api/orders/{id}:
+ *   get:
+ *     summary: One order — visible only to its buyer or seller
+ *     tags: [Orders]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: The order
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/orders/{id}/sync:
+ *   post:
+ *     summary: Buyer re-checks the gateway and marks a pending order paid if OPay says SUCCESS
+ *     tags: [Orders]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: The (possibly updated) order
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ *       502:
+ *         description: GATEWAY — the status request failed
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ *       503:
+ *         description: PAYMENTS_UNAVAILABLE
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ * /api/orders/{id}/confirm:
+ *   post:
+ *     summary: Buyer confirms receipt — releases escrow and records that a seller payout is owed
+ *     description: Sets status to released. Because we cannot verify a real payout transfer, payout.status is 'manual' with the amount in payout.note for an operator to settle.
+ *     tags: [Orders]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: The released order
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } }
+ *       400:
+ *         description: BAD_STATE — only a paid order can be released
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/orders/{id}/cancel:
+ *   post:
+ *     summary: Buyer cancels an unpaid (pending) order
+ *     tags: [Orders]
+ *     parameters: [{ $ref: '#/components/parameters/IdPath' }]
+ *     responses:
+ *       200:
+ *         description: The canceled order
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } }
+ *       400:
+ *         description: BAD_STATE — only a pending order can be canceled
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ *       404: { $ref: '#/components/responses/NotFound' }
+ * /api/orders/opay/callback:
+ *   post:
+ *     summary: OPay transaction-status webhook (unauthenticated; authenticated by HMAC signature)
+ *     description: Verifies body.sha512 (HMAC-SHA3-512) before doing anything. Always returns 200 for a valid signature, even for an unknown reference, so OPay stops retrying.
+ *     tags: [Orders]
+ *     security: []
+ *     responses:
+ *       200: { description: Acknowledged, content: { application/json: { schema: { $ref: '#/components/schemas/Ok' } } } }
+ *       400:
+ *         description: BAD_SIGNATURE — the payload failed verification
+ *         content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
  * /api/admin/reset/non-admin-users:
  *   post:
  *     summary: Remove non-admin accounts and associated user data (Super Admin only; confirmation required)
